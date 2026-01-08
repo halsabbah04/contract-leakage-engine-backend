@@ -1,0 +1,19 @@
+# Azure Functions Python ignore file
+
+.git*
+.vscode
+local.settings.json
+test
+.venv
+.env
+.python_packages
+reference docs/
+*.md
+!README.md
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+htmlcov/
+reference docs/
+.claude/
