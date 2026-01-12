@@ -1,0 +1,342 @@
+# Commercial Leakage Detection Rules
+# These rules identify potential value leakage in contracts
+
+rules:
+  # ============================================================================
+  # PRICING LEAKAGE RULES
+  # ============================================================================
+
+  - rule_id: MISSING_PRICE_ESCALATION
+    name: "Missing Price Escalation"
+    category: pricing
+    severity: high
+    enabled: true
+    description: "Fixed pricing without escalation mechanism in multi-year contracts"
+    conditions:
+      clause_type: pricing
+      risk_signals:
+        - no_price_escalation
+      min_contract_years: 2
+    explanation: |
+      The contract fixes pricing for multiple years without any escalation or adjustment mechanism.
+      This may lead to revenue erosion due to inflation and increased costs over time.
+      With typical inflation of 3-5% annually, the real value of fixed payments decreases each year.
+    business_impact: "Revenue erosion, margin compression"
+    recommended_action: "Negotiate annual price escalation clause tied to inflation index (CPI) or fixed percentage increase"
+    impact_calculation:
+      method: "inflation_based"
+      parameters:
+        inflation_rate: 0.03
+        applies_to: contract_value
+        time_period: remaining_years
+
+  - rule_id: NO_VOLUME_DISCOUNT_CAP
+    name: "No Cap on Volume Discounts"
+    category: pricing
+    severity: medium
+    enabled: true
+    description: "Volume discounts without minimum commitment or cap"
+    conditions:
+      clause_type: pricing
+      keywords:
+        - discount
+        - volume
+      not_contains:
+        - minimum commitment
+        - cap
+        - maximum discount
+    explanation: |
+      Volume discount provisions without minimum commitments or caps can lead to unexpected
+      revenue reduction if the buyer doesn't maintain volume levels. Without protection,
+      the seller bears the risk of volume fluctuation.
+    business_impact: "Unpredictable revenue, margin squeeze"
+    recommended_action: "Add minimum volume commitments or cap maximum discount percentage"
+    impact_calculation:
+      method: "percentage_of_value"
+      parameters:
+        risk_percentage: 0.15
+
+  - rule_id: MISSING_LATE_PAYMENT_PENALTY
+    name: "Missing Late Payment Penalty"
+    category: payment
+    severity: medium
+    enabled: true
+    description: "Payment terms without late fee or penalty provisions"
+    conditions:
+      clause_type: payment
+      not_contains:
+        - late fee
+        - late payment
+        - penalty
+        - interest
+    explanation: |
+      Without late payment penalties, there's no financial incentive for the counterparty
+      to pay on time. This can lead to extended payment cycles and cash flow issues.
+      Industry standard is 1.5% monthly interest or fixed late fees.
+    business_impact: "Delayed cash flow, increased DSO"
+    recommended_action: "Add late payment penalty clause (e.g., 1.5% monthly interest on overdue amounts)"
+    impact_calculation:
+      method: "cash_flow_delay"
+      parameters:
+        average_delay_days: 30
+        interest_rate: 0.015
+
+  # ============================================================================
+  # RENEWAL & TERMINATION LEAKAGE RULES
+  # ============================================================================
+
+  - rule_id: AUTO_RENEWAL_WITHOUT_PRICE_INCREASE
+    name: "Auto-Renewal Without Price Adjustment"
+    category: renewal
+    severity: high
+    enabled: true
+    description: "Automatic renewal clauses without price increase provisions"
+    conditions:
+      clause_type: auto_renewal
+      risk_signals:
+        - auto_renewal
+      not_contains:
+        - price increase
+        - rate adjustment
+        - escalation
+    explanation: |
+      Contracts that automatically renew without price adjustments lock in outdated pricing.
+      This is particularly problematic for multi-year agreements where costs and market rates change.
+      Each renewal at the same price represents lost revenue opportunity.
+    business_impact: "Revenue leakage on renewals, undervalued services"
+    recommended_action: "Tie auto-renewals to price escalation or require renegotiation"
+    impact_calculation:
+      method: "renewal_based"
+      parameters:
+        expected_increase: 0.05
+        renewal_probability: 0.8
+
+  - rule_id: UNFAVORABLE_TERMINATION_TERMS
+    name: "Termination for Convenience Without Penalty"
+    category: termination
+    severity: medium
+    enabled: true
+    description: "Counterparty can terminate without cause or penalty"
+    conditions:
+      clause_type: termination
+      contains:
+        - "for convenience"
+        - "without cause"
+      not_contains:
+        - termination fee
+        - penalty
+        - wind-down
+    explanation: |
+      Allowing the counterparty to terminate for convenience without penalty provides no
+      protection for your investment in onboarding, setup, or expected revenue stream.
+      This creates uncertainty and prevents long-term planning.
+    business_impact: "Revenue uncertainty, lost opportunity costs"
+    recommended_action: "Add termination fee equal to 3-6 months of charges or require minimum term commitment"
+    impact_calculation:
+      method: "opportunity_cost"
+      parameters:
+        months_at_risk: 6
+
+  - rule_id: SHORT_NOTICE_PERIOD
+    name: "Inadequate Termination Notice Period"
+    category: termination
+    severity: low
+    enabled: true
+    description: "Termination notice period less than 60 days"
+    conditions:
+      clause_type: termination
+      max_notice_days: 60
+    explanation: |
+      Short notice periods (less than 60 days) don't provide adequate time to find replacement
+      revenue or adjust operations. This increases business disruption risk.
+    business_impact: "Operational disruption, revenue gap"
+    recommended_action: "Negotiate 60-90 day notice period for termination"
+    impact_calculation:
+      method: "none"
+
+  # ============================================================================
+  # SERVICE LEVEL & PERFORMANCE LEAKAGE RULES
+  # ============================================================================
+
+  - rule_id: NO_SERVICE_LEVEL_AGREEMENT
+    name: "Missing Service Level Agreement"
+    category: service_level
+    severity: medium
+    enabled: true
+    description: "No defined service levels or performance metrics"
+    conditions:
+      clause_type: service_level
+      risk_signals:
+        - no_sla
+      or_condition:
+        not_contains:
+          - uptime
+          - response time
+          - availability
+    explanation: |
+      Without defined service levels, there's no mechanism to ensure performance or claim
+      service credits for underperformance. This leaves you vulnerable to substandard service
+      with no recourse.
+    business_impact: "Unmanaged service quality risk, no performance accountability"
+    recommended_action: "Define clear SLAs with uptime guarantees and service credits for breaches"
+    impact_calculation:
+      method: "percentage_of_value"
+      parameters:
+        risk_percentage: 0.10
+
+  - rule_id: SLA_WITHOUT_CREDITS
+    name: "SLA Without Service Credits"
+    category: service_level
+    severity: medium
+    enabled: true
+    description: "Service level agreement exists but no service credits defined"
+    conditions:
+      clause_type: service_level
+      contains:
+        - "service level"
+        - "sla"
+      not_contains:
+        - credit
+        - rebate
+        - refund
+        - penalty
+    explanation: |
+      An SLA without service credits is unenforceable. While it defines expected performance,
+      there's no financial consequence for the vendor if they fail to meet commitments.
+    business_impact: "No compensation for poor performance, vendor lacks incentive"
+    recommended_action: "Add service credit structure (e.g., 5-10% monthly fee credit for SLA breaches)"
+    impact_calculation:
+      method: "sla_credit_missing"
+      parameters:
+        expected_credit_rate: 0.05
+        breach_probability: 0.20
+
+  # ============================================================================
+  # LIABILITY & INDEMNIFICATION LEAKAGE RULES
+  # ============================================================================
+
+  - rule_id: UNLIMITED_LIABILITY
+    name: "Unlimited Liability Exposure"
+    category: liability
+    severity: critical
+    enabled: true
+    description: "No cap on liability for damages"
+    conditions:
+      clause_type: liability
+      risk_signals:
+        - unlimited_liability
+      not_contains:
+        - "limited to"
+        - "cap"
+        - "maximum"
+    explanation: |
+      Unlimited liability exposure creates unbounded financial risk. Even unlikely events
+      could result in claims far exceeding the contract value. Industry standard is to cap
+      liability at 1-2x annual contract value.
+    business_impact: "Unbounded financial risk, insurance implications"
+    recommended_action: "Cap liability at 12-24 months of fees for non-critical breaches"
+    impact_calculation:
+      method: "risk_multiplier"
+      parameters:
+        multiplier: 2.0
+
+  - rule_id: ONE_SIDED_INDEMNIFICATION
+    name: "One-Sided Indemnification"
+    category: liability
+    severity: high
+    enabled: true
+    description: "You indemnify counterparty but no reciprocal indemnification"
+    conditions:
+      clause_type: indemnification
+      one_sided: true
+    explanation: |
+      One-sided indemnification clauses create asymmetric risk. You're obligated to defend
+      and compensate the counterparty, but receive no similar protection. This is particularly
+      problematic for IP claims or third-party suits.
+    business_impact: "Unbalanced risk allocation, potential litigation costs"
+    recommended_action: "Negotiate mutual indemnification provisions"
+    impact_calculation:
+      method: "percentage_of_value"
+      parameters:
+        risk_percentage: 0.05
+
+  # ============================================================================
+  # PENALTY & ENFORCEMENT LEAKAGE RULES
+  # ============================================================================
+
+  - rule_id: MISSING_LIQUIDATED_DAMAGES
+    name: "No Liquidated Damages for Delays"
+    category: penalties
+    severity: medium
+    enabled: true
+    description: "Delivery or performance delays have no financial penalty"
+    conditions:
+      clause_type: delivery
+      not_contains:
+        - liquidated damages
+        - penalty
+        - damages for delay
+    explanation: |
+      Without liquidated damages clauses for delays, there's no direct compensation mechanism
+      when the counterparty fails to deliver on time. This leaves you with only breach of
+      contract claims, which are harder to prove and enforce.
+    business_impact: "No compensation for delays, missed opportunities"
+    recommended_action: "Add liquidated damages clause (e.g., 0.5-1% per week of delay, capped at 10%)"
+    impact_calculation:
+      method: "delay_penalty_missing"
+      parameters:
+        daily_rate: 0.001
+        expected_delay_days: 14
+
+  # ============================================================================
+  # VOLUME & COMMITMENT LEAKAGE RULES
+  # ============================================================================
+
+  - rule_id: NO_MINIMUM_COMMITMENT
+    name: "No Minimum Volume Commitment"
+    category: volume_commitment
+    severity: medium
+    enabled: true
+    description: "Pay-per-use model without minimum commitments"
+    conditions:
+      clause_type: pricing
+      contains:
+        - "per unit"
+        - "usage based"
+        - "variable"
+      not_contains:
+        - minimum
+        - commitment
+        - guaranteed
+    explanation: |
+      Usage-based pricing without minimum commitments creates revenue uncertainty and makes
+      forecasting difficult. The buyer has no obligation to maintain any minimum purchase level.
+    business_impact: "Revenue unpredictability, planning difficulty"
+    recommended_action: "Add minimum monthly or annual commitment levels"
+    impact_calculation:
+      method: "percentage_of_value"
+      parameters:
+        risk_percentage: 0.25
+
+# ============================================================================
+# Rule Engine Configuration
+# ============================================================================
+
+config:
+  version: "1.0"
+  default_severity_scores:
+    critical: 1.0
+    high: 0.8
+    medium: 0.5
+    low: 0.3
+    info: 0.1
+
+  confidence_thresholds:
+    high_confidence: 0.8
+    medium_confidence: 0.5
+    low_confidence: 0.3
+
+  impact_defaults:
+    inflation_rate: 0.03
+    interest_rate: 0.05
+    average_contract_years: 3

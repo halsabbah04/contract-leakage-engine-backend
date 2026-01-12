@@ -118,13 +118,34 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             else:
                 raise Exception("No extracted text found for contract")
 
-        # TODO: Phase 4 - Leakage Detection (Rules)
-        # rules_engine.detect_leakage(contract_id)
+        # Phase 4: Leakage Detection (Rules Engine)
+        logger.info("Phase 4: Running rules-based leakage detection...")
+
+        from shared.services.rules_engine import RulesEngine
+        from shared.db import FindingRepository
+
+        rules_engine = RulesEngine()
+
+        # Prepare contract metadata for rules engine
+        contract_metadata = {
+            'contract_value': contract.contract_value_estimate or 0,
+            'duration_years': 3,  # TODO: Calculate from start_date/end_date
+        }
+
+        # Run rules engine
+        findings = rules_engine.detect_leakage(contract_id, clauses, contract_metadata)
+        logger.info(f"Rules engine detected {len(findings)} potential issues")
+
+        # Store findings in Cosmos DB
+        if findings:
+            finding_repo = FindingRepository(cosmos_client.findings_container)
+            created_findings = finding_repo.bulk_create(findings)
+            logger.info(f"Stored {len(created_findings)} findings")
 
         # TODO: Phase 5 - AI-Powered Detection
         # ai_service.detect_leakage(contract_id)
 
-        # TODO: Phase 5 - Impact Calculation
+        # TODO: Phase 5 - Impact Calculation (already done in rules for now)
         # impact_calculator.calculate_impact(contract_id)
 
         # Calculate duration

@@ -6,6 +6,7 @@ from .document_service import DocumentService
 from .text_preprocessing_service import TextPreprocessingService, TextSegment
 from .nlp_service import NLPService
 from .clause_extraction_service import ClauseExtractionService
+from .rules_engine import RulesEngine
 
 __all__ = [
     "StorageService",
@@ -15,4 +16,5 @@ __all__ = [
     "TextSegment",
     "NLPService",
     "ClauseExtractionService",
+    "RulesEngine",
 ]
