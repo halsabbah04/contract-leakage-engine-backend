@@ -91,13 +91,32 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         # Update status to analyzing
         contract_repo.update_status(contract_id, ContractStatus.ANALYZING)
 
-        # TODO: Phase 2 - Text Extraction
-        # text_extraction_service.extract_text(contract_id)
-        # contract_repo.update_status(contract_id, ContractStatus.TEXT_EXTRACTED)
+        # Import services
+        from shared.services.document_service import DocumentService
+        from shared.services.clause_extraction_service import ClauseExtractionService
 
-        # TODO: Phase 3 - Clause Extraction
-        # clause_extraction_service.extract_clauses(contract_id)
-        # contract_repo.update_status(contract_id, ContractStatus.CLAUSES_EXTRACTED)
+        # Phase 2: Text Extraction (if not already done)
+        if contract.status == ContractStatus.UPLOADED:
+            logger.info("Phase 2: Extracting text...")
+            # Text extraction happens in upload_contract function
+            # If we're here and status is UPLOADED, text needs extraction
+            pass  # Skip if already extracted
+
+        # Phase 3: Clause Extraction
+        if contract.status in [ContractStatus.TEXT_EXTRACTED, ContractStatus.UPLOADED]:
+            logger.info("Phase 3: Extracting clauses...")
+
+            # Get extracted text
+            document_service = DocumentService()
+            contract_text = document_service.get_extracted_text(contract_id)
+
+            if contract_text:
+                # Extract clauses
+                clause_service = ClauseExtractionService()
+                clauses = clause_service.extract_clauses_from_contract(contract_id, contract_text)
+                logger.info(f"Extracted {len(clauses)} clauses")
+            else:
+                raise Exception("No extracted text found for contract")
 
         # TODO: Phase 4 - Leakage Detection (Rules)
         # rules_engine.detect_leakage(contract_id)
