@@ -119,9 +119,24 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
 
         logger.info(f"Contract created successfully: {contract_id}")
 
-        # TODO: Upload file to Azure Blob Storage (will implement in next step)
-        # blob_uri = upload_to_blob_storage(file_content, contract_id, filename)
-        # contract_repo.set_blob_uri(contract_id, blob_uri)
+        # Upload file to Azure Blob Storage and extract text
+        from shared.services.document_service import DocumentService
+
+        try:
+            document_service = DocumentService()
+            processing_result = document_service.process_uploaded_contract(
+                file_content,
+                contract_id,
+                filename,
+                file_extension,
+                req.files.get('file').content_type
+            )
+
+            logger.info(f"Document processing completed: {processing_result['metadata']}")
+        except Exception as doc_error:
+            logger.error(f"Document processing failed: {str(doc_error)}")
+            # Contract created but processing failed - still return success
+            # User can retry analysis later
 
         # Return success response
         return func.HttpResponse(
