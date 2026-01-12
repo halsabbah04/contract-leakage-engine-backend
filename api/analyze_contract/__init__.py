@@ -137,16 +137,29 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         logger.info(f"Rules engine detected {len(findings)} potential issues")
 
         # Store findings in Cosmos DB
+        finding_repo = FindingRepository(cosmos_client.findings_container)
         if findings:
-            finding_repo = FindingRepository(cosmos_client.findings_container)
             created_findings = finding_repo.bulk_create(findings)
-            logger.info(f"Stored {len(created_findings)} findings")
+            logger.info(f"Stored {len(created_findings)} rule-based findings")
 
-        # TODO: Phase 5 - AI-Powered Detection
-        # ai_service.detect_leakage(contract_id)
+        # Phase 5: AI-Powered Detection with GPT 5.2
+        logger.info("Phase 5: Running AI-powered leakage detection with GPT 5.2...")
 
-        # TODO: Phase 5 - Impact Calculation (already done in rules for now)
-        # impact_calculator.calculate_impact(contract_id)
+        try:
+            from shared.services.ai_detection_service import AIDetectionService
+
+            ai_service = AIDetectionService()
+            ai_findings = ai_service.detect_leakage(contract_id, contract_metadata)
+
+            # Store AI findings
+            if ai_findings:
+                created_ai_findings = finding_repo.bulk_create(ai_findings)
+                logger.info(f"Stored {len(created_ai_findings)} AI-detected findings")
+                findings.extend(ai_findings)
+
+        except Exception as e:
+            logger.error(f"AI detection failed (continuing with rule-based findings): {str(e)}")
+            # Continue even if AI detection fails - we still have rule-based findings
 
         # Calculate duration
         duration = time.time() - start_time

@@ -51,6 +51,21 @@ class SearchServiceError(AIServiceError):
     pass
 
 
+class EmbeddingServiceError(AIServiceError):
+    """Raised when embedding generation fails."""
+    pass
+
+
+class RAGServiceError(AIServiceError):
+    """Raised when RAG operations fail."""
+    pass
+
+
+class AIDetectionError(AIServiceError):
+    """Raised when AI-powered detection fails."""
+    pass
+
+
 class ValidationError(ContractLeakageEngineError):
     """Raised when data validation fails."""
     pass

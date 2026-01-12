@@ -17,7 +17,7 @@ This backend provides REST API endpoints for:
 - **Runtime**: Python 3.12.9 on Azure Functions (Consumption plan)
 - **Database**: Azure Cosmos DB (NoSQL)
 - **Storage**: Azure Blob Storage
-- **AI Services**: Azure OpenAI (GPT-4o), Azure AI Search, Azure Document Intelligence
+- **AI Services**: Azure OpenAI (GPT 5.2 + text-embedding-3-large), Azure AI Search (RAG), Azure Document Intelligence
 - **Deployment**: Cloud-first to Azure
 
 ## Project Structure
@@ -36,11 +36,17 @@ contract-leakage-engine-backend/
 ├── shared/                       # Shared Python modules
 │   ├── models/                   # Pydantic data models
 │   ├── services/                 # Business logic services
+│   │   ├── storage_service.py    # Azure Blob Storage operations
 │   │   ├── ocr_service.py        # Document Intelligence integration
-│   │   ├── nlp_service.py        # Clause extraction logic
-│   │   ├── rules_engine.py       # Rule-based leakage detection
-│   │   ├── ai_service.py         # Azure OpenAI integration
-│   │   └── rag_service.py        # RAG orchestration
+│   │   ├── document_service.py   # Document processing orchestration
+│   │   ├── text_preprocessing_service.py  # Text cleaning & segmentation
+│   │   ├── nlp_service.py        # spaCy NLP analysis
+│   │   ├── clause_extraction_service.py   # Clause extraction orchestration
+│   │   ├── rules_engine.py       # YAML-based leakage detection
+│   │   ├── embedding_service.py  # Vector embeddings (text-embedding-3-large)
+│   │   ├── search_service.py     # Azure AI Search integration
+│   │   ├── rag_service.py        # RAG orchestration
+│   │   └── ai_detection_service.py  # GPT 5.2 leakage detection
 │   ├── db/                       # Cosmos DB operations
 │   │   ├── cosmos_client.py      # Cosmos DB client wrapper
 │   │   └── repositories/         # Data access layer

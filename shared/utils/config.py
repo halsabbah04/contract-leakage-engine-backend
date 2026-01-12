@@ -24,19 +24,20 @@ class Settings:
     STORAGE_CONTAINER_NAME: str = os.getenv("StorageContainerName", "contracts")
 
     # Azure OpenAI
-    OPENAI_KEY: str = os.getenv("OpenAIKey", "")
-    OPENAI_ENDPOINT: str = os.getenv("OpenAIEndpoint", "")
-    OPENAI_DEPLOYMENT_NAME: str = os.getenv("OpenAIDeploymentName", "gpt-4o-deployment")
-    OPENAI_EMBEDDING_DEPLOYMENT: str = os.getenv("OpenAIEmbeddingDeploymentName", "text-embedding-deployment")
-    OPENAI_API_VERSION: str = os.getenv("OpenAIAPIVersion", "2024-02-15-preview")
-    OPENAI_MAX_TOKENS: int = int(os.getenv("OpenAIMaxTokens", "4000"))
-    OPENAI_TEMPERATURE: float = float(os.getenv("OpenAITemperature", "0.3"))
+    AZURE_OPENAI_API_KEY: str = os.getenv("OpenAIKey", "")
+    AZURE_OPENAI_ENDPOINT: str = os.getenv("OpenAIEndpoint", "")
+    AZURE_OPENAI_DEPLOYMENT_NAME: str = os.getenv("OpenAIDeploymentName", "gpt-52-deployment")
+    AZURE_OPENAI_EMBEDDING_DEPLOYMENT: str = os.getenv("OpenAIEmbeddingDeploymentName", "text-embedding-3-large")
+    AZURE_OPENAI_API_VERSION: str = os.getenv("OpenAIAPIVersion", "2024-08-01-preview")
+    AZURE_OPENAI_MAX_TOKENS: int = int(os.getenv("OpenAIMaxTokens", "4000"))
+    AZURE_OPENAI_TEMPERATURE: float = float(os.getenv("OpenAITemperature", "0.2"))
+    EMBEDDING_DIMENSIONS: int = int(os.getenv("EmbeddingDimensions", "3072"))
 
     # Azure AI Search
-    SEARCH_ENDPOINT: str = os.getenv("SearchServiceEndpoint", "")
-    SEARCH_KEY: str = os.getenv("SearchServiceKey", "")
-    SEARCH_INDEX_NAME: str = os.getenv("SearchIndexName", "clauses-index")
-    SEARCH_API_VERSION: str = os.getenv("SearchAPIVersion", "2023-11-01")
+    AZURE_SEARCH_ENDPOINT: str = os.getenv("SearchServiceEndpoint", "")
+    AZURE_SEARCH_API_KEY: str = os.getenv("SearchServiceKey", "")
+    AZURE_SEARCH_INDEX_NAME: str = os.getenv("SearchIndexName", "clauses-index")
+    AZURE_SEARCH_API_VERSION: str = os.getenv("SearchAPIVersion", "2023-11-01")
 
     # Azure Document Intelligence
     DOC_INTEL_ENDPOINT: str = os.getenv("DocumentIntelligenceEndpoint", "")
@@ -71,10 +72,10 @@ class Settings:
         required_settings = [
             ("CosmosDBConnectionString", self.COSMOS_CONNECTION_STRING),
             ("StorageConnectionString", self.STORAGE_CONNECTION_STRING),
-            ("OpenAIKey", self.OPENAI_KEY),
-            ("OpenAIEndpoint", self.OPENAI_ENDPOINT),
-            ("SearchServiceEndpoint", self.SEARCH_ENDPOINT),
-            ("SearchServiceKey", self.SEARCH_KEY),
+            ("OpenAIKey", self.AZURE_OPENAI_API_KEY),
+            ("OpenAIEndpoint", self.AZURE_OPENAI_ENDPOINT),
+            ("SearchServiceEndpoint", self.AZURE_SEARCH_ENDPOINT),
+            ("SearchServiceKey", self.AZURE_SEARCH_API_KEY),
             ("DocumentIntelligenceEndpoint", self.DOC_INTEL_ENDPOINT),
             ("DocumentIntelligenceKey", self.DOC_INTEL_KEY),
         ]

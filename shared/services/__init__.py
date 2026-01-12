@@ -7,6 +7,10 @@ from .text_preprocessing_service import TextPreprocessingService, TextSegment
 from .nlp_service import NLPService
 from .clause_extraction_service import ClauseExtractionService
 from .rules_engine import RulesEngine
+from .embedding_service import EmbeddingService
+from .search_service import SearchService
+from .rag_service import RAGService
+from .ai_detection_service import AIDetectionService
 
 __all__ = [
     "StorageService",
@@ -17,4 +21,8 @@ __all__ = [
     "NLPService",
     "ClauseExtractionService",
     "RulesEngine",
+    "EmbeddingService",
+    "SearchService",
+    "RAGService",
+    "AIDetectionService",
 ]
