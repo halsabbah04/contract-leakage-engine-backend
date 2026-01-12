@@ -292,6 +292,62 @@ All error responses follow this format:
 
 ---
 
+### 7. Export Report
+
+**GET** `/export_report/{contract_id}`
+
+Export contract analysis report as PDF or Excel file.
+
+**Path Parameters**:
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `contract_id` | string | Contract identifier |
+
+**Query Parameters**:
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `format` | string | `pdf` | Report format: `pdf` or `excel` |
+| `include_clauses` | boolean | `false` | Include full clause text (PDF only) |
+
+**Response** (200):
+- **Content-Type**: `application/pdf` or `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
+- **Body**: Binary file content
+- **Headers**:
+  - `Content-Disposition`: `attachment; filename="ContractName_20260112_143000.pdf"`
+  - `Content-Length`: File size in bytes
+
+**Report Contents**:
+
+**PDF Report**:
+- Executive summary with contract details
+- Findings count by severity
+- Total estimated impact
+- Detailed findings with explanations and recommendations
+- Optional: Extracted clauses appendix
+
+**Excel Report** (3 worksheets):
+- **Summary**: Contract overview and severity breakdown
+- **Findings**: Detailed findings table with all attributes
+- **Clauses**: Extracted clauses with types and risk signals
+
+**Error Responses**:
+- `400` - Invalid format parameter
+- `404` - Contract not found
+- `500` - Report generation failed
+
+**Example Usage**:
+```bash
+# Export PDF report
+curl http://localhost:7071/api/export_report/contract_abc123?format=pdf \
+  -o report.pdf
+
+# Export Excel with clauses
+curl http://localhost:7071/api/export_report/contract_abc123?format=excel \
+  -o report.xlsx
+```
+
+---
+
 ## Usage Example (cURL)
 
 ### Upload and analyze a contract
@@ -319,7 +375,6 @@ curl http://localhost:7071/api/get_analysis/contract_abc123
 The following endpoints will be added in future phases:
 
 - `POST /update_assumptions/{contract_id}` - Update custom assumptions for impact calculation
-- `GET /generate_report/{contract_id}` - Export analysis report (PDF/Excel)
 - `DELETE /cleanup_session/{session_id}` - Clean up analysis session data
 - `GET /search_clauses/{contract_id}` - Semantic search across clauses (RAG)
 - `POST /manual_contract` - Submit contract data via structured form (no file upload)

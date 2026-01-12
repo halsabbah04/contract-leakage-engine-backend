@@ -150,6 +150,10 @@ Thumbs.db
 *.local.*
 .claude/settings.local.json
 
+# Node.js / TypeScript (shared-types)
+node_modules/
+*.tsbuildinfo
+
 # Contract files (for testing)
 test_contracts/
 uploaded_contracts/

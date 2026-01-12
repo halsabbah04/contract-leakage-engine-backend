@@ -11,6 +11,7 @@ from .embedding_service import EmbeddingService
 from .search_service import SearchService
 from .rag_service import RAGService
 from .ai_detection_service import AIDetectionService
+from .report_service import ReportService
 
 __all__ = [
     "StorageService",
@@ -25,4 +26,5 @@ __all__ = [
     "SearchService",
     "RAGService",
     "AIDetectionService",
+    "ReportService",
 ]
