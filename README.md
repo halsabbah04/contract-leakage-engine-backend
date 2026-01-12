@@ -14,7 +14,7 @@ This backend provides REST API endpoints for:
 
 ## Architecture
 
-- **Runtime**: Python 3.10+ on Azure Functions (Consumption plan)
+- **Runtime**: Python 3.12.9 on Azure Functions (Consumption plan)
 - **Database**: Azure Cosmos DB (NoSQL)
 - **Storage**: Azure Blob Storage
 - **AI Services**: Azure OpenAI (GPT-4o), Azure AI Search, Azure Document Intelligence
@@ -62,7 +62,7 @@ contract-leakage-engine-backend/
 ## Prerequisites
 
 1. **Azure Resources**: Follow [AZURE_SETUP.md](./AZURE_SETUP.md) to create required Azure resources
-2. **Python**: Python 3.10 or 3.11
+2. **Python**: Python 3.12.9
 3. **Azure Functions Core Tools**: v4.x
 4. **Git**: For version control
 
