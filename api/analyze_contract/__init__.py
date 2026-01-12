@@ -1,0 +1,160 @@
+"""Azure Function: Analyze Contract
+
+Orchestrates the complete contract analysis pipeline:
+1. Extract text (OCR if needed)
+2. Extract clauses
+3. Detect leakage (rules + AI)
+4. Calculate impact
+"""
+
+import azure.functions as func
+import json
+import time
+from datetime import datetime
+
+from shared.models.contract import ContractStatus
+from shared.db import get_cosmos_client, ContractRepository
+from shared.utils.logging import setup_logging
+from shared.utils.exceptions import ContractNotFoundError, DatabaseError
+
+logger = setup_logging(__name__)
+
+
+def main(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Trigger complete analysis pipeline for a contract.
+
+    Route: POST /api/analyze_contract/{contract_id}
+
+    This orchestrates the entire analysis workflow:
+    - Text extraction
+    - Clause extraction
+    - Leakage detection
+    - Impact calculation
+
+    Returns:
+    - 202: Analysis started (asynchronous processing)
+    - 404: Contract not found
+    - 409: Analysis already in progress
+    - 500: Server error
+    """
+    logger.info("analyze_contract function triggered")
+
+    try:
+        # Get contract_id from route parameter
+        contract_id = req.route_params.get('contract_id')
+
+        if not contract_id:
+            logger.warning("No contract_id provided")
+            return func.HttpResponse(
+                json.dumps({"error": "contract_id is required"}),
+                status_code=400,
+                mimetype="application/json"
+            )
+
+        logger.info(f"Starting analysis for contract: {contract_id}")
+
+        # Initialize repository
+        cosmos_client = get_cosmos_client()
+        contract_repo = ContractRepository(cosmos_client.contracts_container)
+
+        # Get contract
+        contract = contract_repo.get_by_contract_id(contract_id)
+        if not contract:
+            logger.warning(f"Contract not found: {contract_id}")
+            return func.HttpResponse(
+                json.dumps({"error": f"Contract '{contract_id}' not found"}),
+                status_code=404,
+                mimetype="application/json"
+            )
+
+        # Check if analysis already in progress
+        if contract.status in [
+            ContractStatus.EXTRACTING_TEXT,
+            ContractStatus.EXTRACTING_CLAUSES,
+            ContractStatus.ANALYZING
+        ]:
+            logger.warning(f"Analysis already in progress for contract {contract_id}")
+            return func.HttpResponse(
+                json.dumps({
+                    "error": "Analysis already in progress",
+                    "contract_id": contract_id,
+                    "current_status": contract.status
+                }),
+                status_code=409,
+                mimetype="application/json"
+            )
+
+        # Record start time
+        start_time = time.time()
+
+        # Update status to analyzing
+        contract_repo.update_status(contract_id, ContractStatus.ANALYZING)
+
+        # TODO: Phase 2 - Text Extraction
+        # text_extraction_service.extract_text(contract_id)
+        # contract_repo.update_status(contract_id, ContractStatus.TEXT_EXTRACTED)
+
+        # TODO: Phase 3 - Clause Extraction
+        # clause_extraction_service.extract_clauses(contract_id)
+        # contract_repo.update_status(contract_id, ContractStatus.CLAUSES_EXTRACTED)
+
+        # TODO: Phase 4 - Leakage Detection (Rules)
+        # rules_engine.detect_leakage(contract_id)
+
+        # TODO: Phase 5 - AI-Powered Detection
+        # ai_service.detect_leakage(contract_id)
+
+        # TODO: Phase 5 - Impact Calculation
+        # impact_calculator.calculate_impact(contract_id)
+
+        # Calculate duration
+        duration = time.time() - start_time
+        contract_repo.set_processing_duration(contract_id, duration)
+
+        # Update status to analyzed
+        contract_repo.update_status(contract_id, ContractStatus.ANALYZED)
+
+        logger.info(f"Analysis completed for contract {contract_id} in {duration:.2f}s")
+
+        # Return accepted response (for now synchronous, will be async in production)
+        return func.HttpResponse(
+            json.dumps({
+                "message": "Analysis completed successfully",
+                "contract_id": contract_id,
+                "status": ContractStatus.ANALYZED.value,
+                "duration_seconds": round(duration, 2),
+                "note": "Full analysis pipeline will be implemented in subsequent phases"
+            }),
+            status_code=200,
+            mimetype="application/json"
+        )
+
+    except DatabaseError as e:
+        logger.error(f"Database error: {str(e)}")
+        return func.HttpResponse(
+            json.dumps({"error": "Database error occurred", "details": str(e)}),
+            status_code=500,
+            mimetype="application/json"
+        )
+
+    except Exception as e:
+        logger.error(f"Unexpected error in analyze_contract: {str(e)}", exc_info=True)
+
+        # Try to update contract status to failed
+        try:
+            cosmos_client = get_cosmos_client()
+            contract_repo = ContractRepository(cosmos_client.contracts_container)
+            contract_repo.update_status(
+                req.route_params.get('contract_id'),
+                ContractStatus.FAILED,
+                error_message=str(e)
+            )
+        except:
+            pass  # Best effort
+
+        return func.HttpResponse(
+            json.dumps({"error": "An unexpected error occurred", "details": str(e)}),
+            status_code=500,
+            mimetype="application/json"
+        )
