@@ -56,3 +56,20 @@ export enum SessionStatus {
   COMPLETED = "completed",
   FAILED = "failed"
 }
+
+export enum FindingStatus {
+  PENDING = "pending",
+  ACCEPTED = "accepted",
+  REJECTED = "rejected",
+  FALSE_POSITIVE = "false_positive",
+  RESOLVED = "resolved"
+}
+
+export enum OverrideAction {
+  CHANGE_SEVERITY = "change_severity",
+  MARK_FALSE_POSITIVE = "mark_false_positive",
+  ADD_NOTE = "add_note",
+  ACCEPT = "accept",
+  REJECT = "reject",
+  RESOLVE = "resolve"
+}

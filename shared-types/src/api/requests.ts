@@ -1,4 +1,5 @@
 import { ContractMetadata } from '../models/contract';
+import { OverrideAction, Severity } from '../enums';
 
 /**
  * API Request Types for Contract Leakage Engine
@@ -43,3 +44,23 @@ export interface ExportReportRequest {
   format?: 'pdf' | 'excel'; // Default: pdf
   include_clauses?: boolean; // Default: false (PDF only)
 }
+
+// POST /api/overrides/:contract_id
+export interface CreateOverrideRequest {
+  finding_id: string;
+  action: OverrideAction;
+  user_email: string;
+  previous_value?: string | Severity;
+  new_value?: string | Severity;
+  notes?: string;
+  reason?: string;
+}
+
+// GET /api/overrides/:contract_id
+export interface GetOverridesRequest {
+  contract_id: string;
+  finding_id?: string; // Optional: get overrides for specific finding
+}
+
+// GET /api/overrides/:contract_id/summary
+// No request body - contract_id in path

@@ -13,6 +13,7 @@ export * from './models/contract';
 export * from './models/clause';
 export * from './models/finding';
 export * from './models/session';
+export * from './models/override';
 
 // API Types
 export * from './api/requests';

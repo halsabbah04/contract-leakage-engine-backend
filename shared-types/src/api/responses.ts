@@ -1,6 +1,7 @@
 import { Contract } from '../models/contract';
 import { Clause } from '../models/clause';
 import { LeakageFinding } from '../models/finding';
+import { UserOverride, OverrideSummary } from '../models/override';
 
 /**
  * API Response Types for Contract Leakage Engine
@@ -96,4 +97,25 @@ export interface PaginatedResponse<T> {
 export interface SuccessResponse {
   message: string;
   success: boolean;
+}
+
+// POST /api/overrides/:contract_id
+export interface CreateOverrideResponse {
+  override_id: string;
+  finding_id: string;
+  success: boolean;
+  message: string;
+}
+
+// GET /api/overrides/:contract_id
+export interface GetOverridesResponse {
+  contract_id: string;
+  overrides: UserOverride[];
+  total_count: number;
+}
+
+// GET /api/overrides/:contract_id/summary
+export interface GetOverrideSummaryResponse {
+  contract_id: string;
+  summary: OverrideSummary;
 }
