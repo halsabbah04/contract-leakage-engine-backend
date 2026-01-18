@@ -1,7 +1,6 @@
 import { Contract } from '../models/contract';
 import { Clause } from '../models/clause';
 import { LeakageFinding } from '../models/finding';
-import { AnalysisSession } from '../models/session';
 
 /**
  * API Response Types for Contract Leakage Engine
