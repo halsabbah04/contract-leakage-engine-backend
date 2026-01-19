@@ -1,14 +1,14 @@
 """NLP service for clause analysis and entity extraction using spaCy."""
 
 import re
-from typing import List, Dict, Optional, Tuple
-from datetime import datetime
+from typing import Dict, List, Optional, Tuple
+
 import spacy
 from spacy.tokens import Doc
 
-from ..models.clause import Clause, ClauseType, ExtractedEntities
-from ..utils.logging import setup_logging
+from ..models.clause import ClauseType, ExtractedEntities
 from ..utils.exceptions import ClauseExtractionError
+from ..utils.logging import setup_logging
 
 logger = setup_logging(__name__)
 
@@ -28,9 +28,7 @@ class NLPService:
 
         except OSError:
             logger.error("spaCy model not found. Please run: python -m spacy download en_core_web_lg")
-            raise ClauseExtractionError(
-                "spaCy model not found. Install with: python -m spacy download en_core_web_lg"
-            )
+            raise ClauseExtractionError("spaCy model not found. Install with: python -m spacy download en_core_web_lg")
         except Exception as e:
             logger.error(f"Failed to initialize NLP service: {str(e)}")
             raise ClauseExtractionError(f"Failed to initialize NLP: {str(e)}")
@@ -38,59 +36,120 @@ class NLPService:
         # Clause classification keywords
         self.clause_keywords = {
             ClauseType.PRICING: [
-                'price', 'pricing', 'fee', 'fees', 'rate', 'rates', 'cost', 'costs',
-                'charge', 'charges', 'payment amount', 'consideration'
+                "price",
+                "pricing",
+                "fee",
+                "fees",
+                "rate",
+                "rates",
+                "cost",
+                "costs",
+                "charge",
+                "charges",
+                "payment amount",
+                "consideration",
             ],
             ClauseType.PAYMENT: [
-                'payment', 'pay', 'invoice', 'invoicing', 'billing', 'installment',
-                'due date', 'payment terms', 'net 30', 'net 60'
+                "payment",
+                "pay",
+                "invoice",
+                "invoicing",
+                "billing",
+                "installment",
+                "due date",
+                "payment terms",
+                "net 30",
+                "net 60",
             ],
             ClauseType.TERMINATION: [
-                'termination', 'terminate', 'cancel', 'cancellation', 'end agreement',
-                'discontinue', 'cessation'
+                "termination",
+                "terminate",
+                "cancel",
+                "cancellation",
+                "end agreement",
+                "discontinue",
+                "cessation",
             ],
             ClauseType.RENEWAL: [
-                'renewal', 'renew', 'extension', 'extend', 'term extension'
+                "renewal",
+                "renew",
+                "extension",
+                "extend",
+                "term extension",
             ],
             ClauseType.AUTO_RENEWAL: [
-                'auto-renew', 'automatic renewal', 'automatically renew',
-                'unless terminated', 'evergreen'
+                "auto-renew",
+                "automatic renewal",
+                "automatically renew",
+                "unless terminated",
+                "evergreen",
             ],
             ClauseType.SERVICE_LEVEL: [
-                'service level', 'sla', 'uptime', 'availability', 'performance',
-                'response time', 'resolution time'
+                "service level",
+                "sla",
+                "uptime",
+                "availability",
+                "performance",
+                "response time",
+                "resolution time",
             ],
             ClauseType.LIABILITY: [
-                'liability', 'liable', 'indemnify', 'indemnification', 'limitation of liability',
-                'damages', 'consequential damages'
+                "liability",
+                "liable",
+                "indemnify",
+                "indemnification",
+                "limitation of liability",
+                "damages",
+                "consequential damages",
             ],
             ClauseType.PENALTIES: [
-                'penalty', 'penalties', 'liquidated damages', 'late fee', 'fine', 'fines'
+                "penalty",
+                "penalties",
+                "liquidated damages",
+                "late fee",
+                "fine",
+                "fines",
             ],
             ClauseType.DISCOUNTS: [
-                'discount', 'rebate', 'volume discount', 'early payment discount'
+                "discount",
+                "rebate",
+                "volume discount",
+                "early payment discount",
             ],
             ClauseType.WARRANTY: [
-                'warranty', 'warrant', 'warranties', 'guarantee', 'representation'
+                "warranty",
+                "warrant",
+                "warranties",
+                "guarantee",
+                "representation",
             ],
             ClauseType.CONFIDENTIALITY: [
-                'confidential', 'confidentiality', 'non-disclosure', 'nda',
-                'proprietary information', 'trade secret'
+                "confidential",
+                "confidentiality",
+                "non-disclosure",
+                "nda",
+                "proprietary information",
+                "trade secret",
             ],
             ClauseType.INTELLECTUAL_PROPERTY: [
-                'intellectual property', 'ip', 'copyright', 'trademark', 'patent',
-                'proprietary rights', 'ownership'
-            ]
+                "intellectual property",
+                "ip",
+                "copyright",
+                "trademark",
+                "patent",
+                "proprietary rights",
+                "ownership",
+            ],
         }
 
         # Risk signal patterns
         self.risk_patterns = {
-            'no_price_escalation': r'(?:price|fee|rate)s?\s+(?:shall|will)?\s*(?:remain)?\s*(?:fixed|constant)',
-            'auto_renewal': r'(?:auto(?:matic)?(?:ally)?\s+renew|evergreen)',
-            'no_termination_clause': r'(?:perpetual|indefinite|no\s+termination)',
-            'unlimited_liability': r'(?:unlimited\s+liability|no\s+cap\s+on\s+liability)',
-            'no_sla': r'(?:no\s+service\s+level|without\s+guarantee)',
-            'missing_penalty': r'(?:no\s+penalty|without\s+penalties)',
+            "no_price_escalation": r"(?:price|fee|rate)s?\s+(?:shall|will)?\s*(?:remain)?\s*(?:fixed|constant)",
+            "auto_renewal": r"(?:auto(?:matic)?(?:ally)?\s+renew|evergreen)",
+            "no_termination_clause": r"(?:perpetual|indefinite|no\s+termination)",
+            "unlimited_liability": r"(?:unlimited\s+liability|no\s+cap\s+on\s+liability)",
+            "no_sla": r"(?:no\s+service\s+level|without\s+guarantee)",
+            "missing_penalty": r"(?:no\s+penalty|without\s+penalties)",
         }
 
     def analyze_clause(self, clause_text: str, context: Optional[str] = None) -> Dict:
@@ -127,7 +186,7 @@ class NLPService:
                 "risk_signals": risk_signals,
                 "normalized_summary": summary,
                 "word_count": len(clause_text.split()),
-                "sentence_count": len(list(doc.sents))
+                "sentence_count": len(list(doc.sents)),
             }
 
             return analysis
@@ -146,7 +205,7 @@ class NLPService:
         Returns:
             ExtractedEntities object
         """
-        entities = ExtractedEntities()
+        entities = ExtractedEntities(currency=None)
 
         for ent in doc.ents:
             if ent.label_ == "MONEY":
@@ -205,7 +264,7 @@ class NLPService:
             return ClauseType.OTHER, 0.5
 
         # Get type with highest score
-        best_type = max(type_scores, key=type_scores.get)
+        best_type = max(type_scores, key=lambda k: type_scores[k])
         max_score = type_scores[best_type]
 
         # Calculate confidence (normalize score)
@@ -252,14 +311,14 @@ class NLPService:
 
         # If truncated, find last complete sentence
         if len(clause_text) > 200:
-            last_period = summary.rfind('.')
+            last_period = summary.rfind(".")
             if last_period > 50:
-                summary = summary[:last_period + 1]
+                summary = summary[: last_period + 1]
             else:
                 summary = summary + "..."
 
         # Clean whitespace
-        summary = re.sub(r'\s+', ' ', summary).strip()
+        summary = re.sub(r"\s+", " ", summary).strip()
 
         return summary
 
@@ -267,34 +326,34 @@ class NLPService:
         """Parse monetary amount from text."""
         try:
             # Remove currency symbols and commas
-            cleaned = re.sub(r'[$£€¥,]', '', text)
+            cleaned = re.sub(r"[$£€¥,]", "", text)
             # Extract number
-            match = re.search(r'\d+(?:\.\d+)?', cleaned)
+            match = re.search(r"\d+(?:\.\d+)?", cleaned)
             if match:
                 return float(match.group())
-        except:
-            pass
+        except (ValueError, AttributeError, TypeError) as e:
+            logger.debug(f"Failed to parse money from '{text}': {e}")
         return None
 
     def _parse_percentage(self, text: str) -> Optional[float]:
         """Parse percentage from text."""
         try:
             # Extract number before %
-            match = re.search(r'(\d+(?:\.\d+)?)\s*%', text)
+            match = re.search(r"(\d+(?:\.\d+)?)\s*%", text)
             if match:
                 return float(match.group(1))
-        except:
-            pass
+        except (ValueError, AttributeError, TypeError) as e:
+            logger.debug(f"Failed to parse percentage from '{text}': {e}")
         return None
 
     def _extract_currency(self, text: str) -> Optional[str]:
         """Extract currency code from text."""
         # Common currency patterns
         currency_patterns = {
-            'USD': r'\$|USD|US\$|U\.S\.\$',
-            'EUR': r'€|EUR',
-            'GBP': r'£|GBP',
-            'BHD': r'BHD|BD',
+            "USD": r"\$|USD|US\$|U\.S\.\$",
+            "EUR": r"€|EUR",
+            "GBP": r"£|GBP",
+            "BHD": r"BHD|BD",
         }
 
         for currency, pattern in currency_patterns.items():
@@ -308,15 +367,15 @@ class NLPService:
         rates = []
 
         # Pattern: number followed by rate-related word
-        pattern = r'(\d+(?:\.\d+)?)\s*(?:per|rate|%)'
+        pattern = r"(\d+(?:\.\d+)?)\s*(?:per|rate|%)"
 
         matches = re.finditer(pattern, text, re.IGNORECASE)
         for match in matches:
             try:
                 rate = float(match.group(1))
                 rates.append(rate)
-            except:
-                pass
+            except (ValueError, AttributeError, TypeError) as e:
+                logger.debug(f"Failed to parse rate from match: {e}")
 
         return rates[:10]  # Limit to 10
 
@@ -325,7 +384,7 @@ class NLPService:
         durations = []
 
         # Pattern: number + time unit
-        pattern = r'(\d+)\s*(day|days|week|weeks|month|months|year|years)'
+        pattern = r"(\d+)\s*(day|days|week|weeks|month|months|year|years)"
 
         matches = re.finditer(pattern, text, re.IGNORECASE)
         for match in matches:
@@ -353,14 +412,16 @@ class NLPService:
             except Exception as e:
                 logger.error(f"Failed to analyze clause {i}: {str(e)}")
                 # Add placeholder result
-                results.append({
-                    "clause_type": ClauseType.OTHER,
-                    "classification_confidence": 0.0,
-                    "entities": ExtractedEntities(),
-                    "risk_signals": [],
-                    "normalized_summary": text[:100],
-                    "error": str(e)
-                })
+                results.append(
+                    {
+                        "clause_type": ClauseType.OTHER,
+                        "classification_confidence": 0.0,
+                        "entities": ExtractedEntities(currency=None),
+                        "risk_signals": [],
+                        "normalized_summary": text[:100],
+                        "error": str(e),
+                    }
+                )
 
         logger.info(f"Batch analysis completed: {len(results)} results")
         return results

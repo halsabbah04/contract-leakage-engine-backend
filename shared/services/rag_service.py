@@ -1,13 +1,12 @@
 """RAG (Retrieval-Augmented Generation) service for contract analysis."""
 
-from typing import List, Dict, Optional, Any
+from typing import Any, Dict, List, Optional
 
+from ..db import ClauseRepository, get_cosmos_client
+from ..utils.exceptions import RAGServiceError
+from ..utils.logging import setup_logging
 from .embedding_service import EmbeddingService
 from .search_service import SearchService
-from ..models.clause import Clause
-from ..db import get_cosmos_client, ClauseRepository
-from ..utils.logging import setup_logging
-from ..utils.exceptions import RAGServiceError
 
 logger = setup_logging(__name__)
 
@@ -29,11 +28,7 @@ class RAGService:
             logger.error(f"Failed to initialize RAG service: {str(e)}")
             raise RAGServiceError(f"RAG service initialization failed: {str(e)}")
 
-    def index_contract_clauses(
-        self,
-        contract_id: str,
-        force_reindex: bool = False
-    ) -> Dict[str, int]:
+    def index_contract_clauses(self, contract_id: str, force_reindex: bool = False) -> Dict[str, int]:
         """
         Index all clauses for a contract in Azure AI Search.
 
@@ -53,10 +48,7 @@ class RAGService:
 
             # Step 1: Generate embeddings
             logger.info("Step 1: Generating embeddings...")
-            embedded_count = self.embedding_service.embed_clauses_for_contract(
-                contract_id,
-                force_reembed=force_reindex
-            )
+            embedded_count = self.embedding_service.embed_clauses_for_contract(contract_id, force_reembed=force_reindex)
 
             # Step 2: Get clauses with embeddings
             cosmos_client = get_cosmos_client()
@@ -75,7 +67,7 @@ class RAGService:
             stats = {
                 "total_clauses": len(clauses),
                 "embedded_count": embedded_count,
-                "indexed_count": indexed_count
+                "indexed_count": indexed_count,
             }
 
             logger.info(f"RAG indexing complete: {stats}")
@@ -92,7 +84,7 @@ class RAGService:
         contract_id: Optional[str] = None,
         top_k: int = 5,
         min_score: float = 0.7,
-        use_hybrid: bool = True
+        use_hybrid: bool = True,
     ) -> List[Dict[str, Any]]:
         """
         Perform semantic search on contract clauses.
@@ -120,14 +112,14 @@ class RAGService:
                     query_vector=query_vector,
                     contract_id=contract_id,
                     top_k=top_k,
-                    min_score=min_score
+                    min_score=min_score,
                 )
             else:
                 results = self.search_service.vector_search(
                     query_vector=query_vector,
                     contract_id=contract_id,
                     top_k=top_k,
-                    min_score=min_score
+                    min_score=min_score,
                 )
 
             logger.info(f"Semantic search returned {len(results)} results")
@@ -143,7 +135,7 @@ class RAGService:
         clause_id: str,
         contract_id: str,
         top_k: int = 5,
-        same_contract_only: bool = False
+        same_contract_only: bool = False,
     ) -> List[Dict[str, Any]]:
         """
         Find clauses similar to a given clause.
@@ -185,11 +177,11 @@ class RAGService:
                 query_vector=reference_clause.embedding,
                 contract_id=filter_contract,
                 top_k=top_k + 1,  # +1 to account for the clause itself
-                min_score=0.6
+                min_score=0.6,
             )
 
             # Filter out the reference clause itself
-            similar_clauses = [r for r in results if r['clause_id'] != clause_id][:top_k]
+            similar_clauses = [r for r in results if r["clause_id"] != clause_id][:top_k]
 
             logger.info(f"Found {len(similar_clauses)} similar clauses")
 
@@ -204,7 +196,7 @@ class RAGService:
         queries: List[str],
         contract_id: str,
         max_clauses_per_query: int = 3,
-        max_total_clauses: int = 10
+        max_total_clauses: int = 10,
     ) -> Dict[str, Any]:
         """
         Build RAG context for AI-powered analysis.
@@ -234,14 +226,14 @@ class RAGService:
                     contract_id=contract_id,
                     top_k=max_clauses_per_query,
                     min_score=0.65,
-                    use_hybrid=True
+                    use_hybrid=True,
                 )
 
                 # Deduplicate
                 for result in results:
-                    clause_id = result['clause_id']
+                    clause_id = result["clause_id"]
                     if clause_id not in seen_clause_ids:
-                        result['matched_query'] = query
+                        result["matched_query"] = query
                         all_results.append(result)
                         seen_clause_ids.add(clause_id)
 
@@ -252,7 +244,7 @@ class RAGService:
                     break
 
             # Sort by relevance score
-            score_key = 'combined_score' if 'combined_score' in all_results[0] else 'similarity_score'
+            score_key = "combined_score" if "combined_score" in all_results[0] else "similarity_score"
             all_results.sort(key=lambda x: x[score_key], reverse=True)
 
             # Limit to max_total_clauses
@@ -264,7 +256,7 @@ class RAGService:
                 "query_count": len(queries),
                 "retrieved_clauses": all_results,
                 "total_clauses": len(all_results),
-                "context_summary": self._summarize_context(all_results)
+                "context_summary": self._summarize_context(all_results),
             }
 
             logger.info(f"RAG context built: {len(all_results)} clauses retrieved")
@@ -291,9 +283,9 @@ class RAGService:
         summary_parts = []
 
         for i, result in enumerate(results, 1):
-            clause_type = result.get('clause_type', 'unknown')
-            text = result.get('normalized_summary', result.get('original_text', ''))
-            risk_signals = result.get('risk_signals', [])
+            clause_type = result.get("clause_type", "unknown")
+            text = result.get("normalized_summary", result.get("original_text", ""))
+            risk_signals = result.get("risk_signals", [])
 
             summary = f"\n[Clause {i}] Type: {clause_type}"
             if risk_signals:
@@ -349,8 +341,8 @@ class RAGService:
                 "contract_id": contract_id,
                 "total_clauses": len(clauses),
                 "clauses_with_embeddings": clauses_with_embeddings,
-                "embedding_coverage": clauses_with_embeddings / len(clauses) if clauses else 0,
-                "indexed_in_search": True  # Assume indexed if embeddings exist
+                "embedding_coverage": (clauses_with_embeddings / len(clauses) if clauses else 0),
+                "indexed_in_search": True,  # Assume indexed if embeddings exist
             }
 
             return stats

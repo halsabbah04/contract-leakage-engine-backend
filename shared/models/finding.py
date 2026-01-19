@@ -1,13 +1,15 @@
 """Leakage finding data models."""
 
 from datetime import datetime
-from typing import Optional, List, Dict, Any, Literal
-from pydantic import BaseModel, Field
 from enum import Enum
+from typing import Any, Dict, List, Literal, Optional
+
+from pydantic import BaseModel, Field
 
 
 class LeakageCategory(str, Enum):
     """Categories of commercial leakage."""
+
     PRICING = "pricing"
     RENEWAL = "renewal"
     TERMINATION = "termination"
@@ -24,6 +26,7 @@ class LeakageCategory(str, Enum):
 
 class Severity(str, Enum):
     """Severity level of finding."""
+
     CRITICAL = "critical"
     HIGH = "high"
     MEDIUM = "medium"
@@ -33,6 +36,7 @@ class Severity(str, Enum):
 
 class DetectionMethod(str, Enum):
     """How the finding was detected."""
+
     RULE = "rule"
     AI = "ai"
     HYBRID = "hybrid"
@@ -40,6 +44,7 @@ class DetectionMethod(str, Enum):
 
 class EstimatedImpact(BaseModel):
     """Financial impact estimation."""
+
     currency: str = Field(default="USD", description="Currency code")
     value: Optional[float] = Field(None, description="Estimated monetary impact")
     value_min: Optional[float] = Field(None, description="Minimum estimated impact")
@@ -50,6 +55,7 @@ class EstimatedImpact(BaseModel):
 
 class Assumptions(BaseModel):
     """Assumptions used in impact calculation."""
+
     inflation_rate: Optional[float] = Field(None, description="Assumed inflation rate")
     remaining_years: Optional[float] = Field(None, description="Years remaining in contract")
     annual_volume: Optional[float] = Field(None, description="Assumed annual volume")
@@ -64,6 +70,7 @@ class LeakageFinding(BaseModel):
     Cosmos DB Container: leakage_findings
     Partition Key: contract_id
     """
+
     id: str = Field(..., description="Unique finding identifier")
     type: Literal["finding"] = "finding"
     contract_id: str = Field(..., description="Parent contract ID (partition key)")
@@ -87,8 +94,18 @@ class LeakageFinding(BaseModel):
     recommended_action: Optional[str] = Field(None, description="Suggested remediation action")
 
     # Financial impact
-    assumptions: Assumptions = Field(default_factory=Assumptions, description="Assumptions used")
-    estimated_impact: EstimatedImpact = Field(default_factory=EstimatedImpact, description="Financial impact")
+    assumptions: Assumptions = Field(
+        default_factory=lambda: Assumptions(
+            inflation_rate=None, remaining_years=None, annual_volume=None, probability=None
+        ),
+        description="Assumptions used",
+    )
+    estimated_impact: EstimatedImpact = Field(
+        default_factory=lambda: EstimatedImpact(
+            value=None, value_min=None, value_max=None, confidence=None, calculation_method=None
+        ),
+        description="Financial impact",
+    )
 
     # Vector embedding for finding similarity search
     embedding: Optional[List[float]] = Field(None, description="Vector embedding for semantic search")
@@ -103,6 +120,7 @@ class LeakageFinding(BaseModel):
 
     class Config:
         """Pydantic configuration."""
+
         use_enum_values = True
         json_schema_extra = {
             "example": {
@@ -115,16 +133,13 @@ class LeakageFinding(BaseModel):
                 "detection_method": "rule",
                 "severity": "high",
                 "confidence": 0.95,
-                "explanation": "The contract fixes pricing for a multi-year term without escalation, which may lead to revenue erosion due to inflation.",
-                "assumptions": {
-                    "inflation_rate": 0.03,
-                    "remaining_years": 2
-                },
-                "estimated_impact": {
-                    "currency": "USD",
-                    "value": 72000
-                },
-                "partition_key": "contract_001"
+                "explanation": (
+                    "The contract fixes pricing for a multi-year term without escalation, "
+                    "which may lead to revenue erosion due to inflation."
+                ),
+                "assumptions": {"inflation_rate": 0.03, "remaining_years": 2},
+                "estimated_impact": {"currency": "USD", "value": 72000},
+                "partition_key": "contract_001",
             }
         }
 

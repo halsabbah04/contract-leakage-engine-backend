@@ -7,23 +7,23 @@ class BrandColors:
     """Color palette for professional reports."""
 
     # Primary brand colors
-    PRIMARY_BLUE = colors.HexColor('#1a237e')  # Deep blue
-    ACCENT_BLUE = colors.HexColor('#1976d2')   # Lighter blue
-    DARK_NAVY = colors.HexColor('#0d1b2a')     # Very dark blue
+    PRIMARY_BLUE = colors.HexColor("#1a237e")  # Deep blue
+    ACCENT_BLUE = colors.HexColor("#1976d2")  # Lighter blue
+    DARK_NAVY = colors.HexColor("#0d1b2a")  # Very dark blue
 
     # Severity colors
-    CRITICAL_RED = colors.HexColor('#d32f2f')
-    HIGH_ORANGE = colors.HexColor('#f57c00')
-    MEDIUM_YELLOW = colors.HexColor('#fbc02d')
-    LOW_GREEN = colors.HexColor('#388e3c')
+    CRITICAL_RED = colors.HexColor("#d32f2f")
+    HIGH_ORANGE = colors.HexColor("#f57c00")
+    MEDIUM_YELLOW = colors.HexColor("#fbc02d")
+    LOW_GREEN = colors.HexColor("#388e3c")
 
     # Neutral colors
-    DARK_GREY = colors.HexColor('#424242')
-    MEDIUM_GREY = colors.HexColor('#757575')
-    LIGHT_GREY = colors.HexColor('#e0e0e0')
-    VERY_LIGHT_GREY = colors.HexColor('#f5f5f5')
-    WHITE = colors.HexColor('#ffffff')
-    BLACK = colors.HexColor('#000000')
+    DARK_GREY = colors.HexColor("#424242")
+    MEDIUM_GREY = colors.HexColor("#757575")
+    LIGHT_GREY = colors.HexColor("#e0e0e0")
+    VERY_LIGHT_GREY = colors.HexColor("#f5f5f5")
+    WHITE = colors.HexColor("#ffffff")
+    BLACK = colors.HexColor("#000000")
 
     # Table colors
     TABLE_HEADER = PRIMARY_BLUE
@@ -36,10 +36,10 @@ class Typography:
     """Typography scale for professional reports."""
 
     # Font families
-    PRIMARY_FONT = 'Helvetica'
-    PRIMARY_BOLD = 'Helvetica-Bold'
-    PRIMARY_ITALIC = 'Helvetica-Oblique'
-    PRIMARY_BOLD_ITALIC = 'Helvetica-BoldOblique'
+    PRIMARY_FONT = "Helvetica"
+    PRIMARY_BOLD = "Helvetica-Bold"
+    PRIMARY_ITALIC = "Helvetica-Oblique"
+    PRIMARY_BOLD_ITALIC = "Helvetica-BoldOblique"
 
     # Font sizes (in points)
     COVER_TITLE = 36
@@ -67,14 +67,14 @@ class Layout:
     """Layout constants for page structure."""
 
     # Page dimensions (letter size in points)
-    PAGE_WIDTH = 612     # 8.5 inches
-    PAGE_HEIGHT = 792    # 11 inches
+    PAGE_WIDTH = 612  # 8.5 inches
+    PAGE_HEIGHT = 792  # 11 inches
 
     # Margins (in points, 1 inch = 72 points)
-    MARGIN_TOP = 54      # 0.75 inches
-    MARGIN_BOTTOM = 54   # 0.75 inches
-    MARGIN_LEFT = 54     # 0.75 inches
-    MARGIN_RIGHT = 54    # 0.75 inches
+    MARGIN_TOP = 54  # 0.75 inches
+    MARGIN_BOTTOM = 54  # 0.75 inches
+    MARGIN_LEFT = 54  # 0.75 inches
+    MARGIN_RIGHT = 54  # 0.75 inches
 
     # Spacing
     SECTION_SPACING = 24

@@ -1,11 +1,11 @@
 """Repository for AnalysisSession operations."""
 
-from typing import Optional
 from datetime import datetime
+from typing import Optional
 
-from .base_repository import BaseRepository
 from ...models.session import AnalysisSession, FindingOverride
 from ...utils.logging import setup_logging
+from .base_repository import BaseRepository
 
 logger = setup_logging(__name__)
 
@@ -67,7 +67,10 @@ class SessionRepository(BaseRepository[AnalysisSession]):
             id=f"session_{contract_id}",
             contract_id=contract_id,
             partition_key=contract_id,
-            user_role=user_role
+            user_role=user_role,
+            user_id=None,
+            custom_inflation_rate=None,
+            session_duration_seconds=None,
         )
 
         logger.info(f"Creating new session for contract {contract_id}")

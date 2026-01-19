@@ -1,7 +1,6 @@
 """Configuration management for Azure Functions app."""
 
 import os
-from typing import Optional
 from functools import lru_cache
 
 
@@ -18,6 +17,7 @@ class Settings:
     COSMOS_CLAUSES_CONTAINER: str = os.getenv("CosmosDBClausesContainer", "clauses")
     COSMOS_FINDINGS_CONTAINER: str = os.getenv("CosmosDBFindingsContainer", "leakage_findings")
     COSMOS_SESSIONS_CONTAINER: str = os.getenv("CosmosDBSessionsContainer", "analysis_sessions")
+    COSMOS_OVERRIDES_CONTAINER: str = os.getenv("CosmosDBOverridesContainer", "user_overrides")
 
     # Azure Blob Storage
     STORAGE_CONNECTION_STRING: str = os.getenv("StorageConnectionString", "")

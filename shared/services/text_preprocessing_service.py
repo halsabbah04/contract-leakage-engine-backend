@@ -1,8 +1,8 @@
 """Text preprocessing and segmentation service."""
 
 import re
-from typing import List, Dict, Optional
 from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 from ..utils.logging import setup_logging
 
@@ -12,6 +12,7 @@ logger = setup_logging(__name__)
 @dataclass
 class TextSegment:
     """Represents a segment of text (clause, section, paragraph)."""
+
     text: str
     segment_type: str  # 'section', 'clause', 'paragraph'
     section_number: Optional[str] = None
@@ -30,12 +31,12 @@ class TextPreprocessingService:
 
         # Common contract section patterns
         self.section_patterns = [
-            r'^(\d+\.)+\s+',  # 1. 1.1. 1.1.1.
-            r'^[A-Z][a-z]*\s+\d+\.?\s+',  # Section 1.
-            r'^Article\s+\d+\.?\s+',  # Article 1.
-            r'^SECTION\s+\d+\.?\s+',  # SECTION 1.
-            r'^\([a-z]\)\s+',  # (a)
-            r'^\([0-9]+\)\s+',  # (1)
+            r"^(\d+\.)+\s+",  # 1. 1.1. 1.1.1.
+            r"^[A-Z][a-z]*\s+\d+\.?\s+",  # Section 1.
+            r"^Article\s+\d+\.?\s+",  # Article 1.
+            r"^SECTION\s+\d+\.?\s+",  # SECTION 1.
+            r"^\([a-z]\)\s+",  # (a)
+            r"^\([0-9]+\)\s+",  # (1)
         ]
 
     def preprocess_text(self, raw_text: str) -> str:
@@ -53,17 +54,17 @@ class TextPreprocessingService:
         text = raw_text
 
         # Remove excessive whitespace
-        text = re.sub(r'\s+', ' ', text)
+        text = re.sub(r"\s+", " ", text)
 
         # Remove page numbers (common patterns)
-        text = re.sub(r'\n\s*Page\s+\d+\s+of\s+\d+\s*\n', '\n', text, flags=re.IGNORECASE)
-        text = re.sub(r'\n\s*\d+\s*\n', '\n', text)
+        text = re.sub(r"\n\s*Page\s+\d+\s+of\s+\d+\s*\n", "\n", text, flags=re.IGNORECASE)
+        text = re.sub(r"\n\s*\d+\s*\n", "\n", text)
 
         # Remove header/footer artifacts
-        text = re.sub(r'\n\s*-\s*\d+\s*-\s*\n', '\n', text)
+        text = re.sub(r"\n\s*-\s*\d+\s*-\s*\n", "\n", text)
 
         # Normalize line breaks
-        text = re.sub(r'\n{3,}', '\n\n', text)
+        text = re.sub(r"\n{3,}", "\n\n", text)
 
         # Remove leading/trailing whitespace
         text = text.strip()
@@ -89,9 +90,9 @@ class TextPreprocessingService:
         logger.info("Segmenting text into clauses...")
 
         segments = []
-        lines = text.split('\n')
+        lines = text.split("\n")
 
-        current_segment = []
+        current_segment: list[str] = []
         current_section = None
         segment_start = 0
         char_position = 0
@@ -109,15 +110,17 @@ class TextPreprocessingService:
             if is_section_header:
                 # Save previous segment
                 if current_segment:
-                    segment_text = '\n'.join(current_segment).strip()
+                    segment_text = "\n".join(current_segment).strip()
                     if segment_text:
-                        segments.append(TextSegment(
-                            text=segment_text,
-                            segment_type='clause',
-                            section_number=current_section,
-                            start_position=segment_start,
-                            end_position=char_position
-                        ))
+                        segments.append(
+                            TextSegment(
+                                text=segment_text,
+                                segment_type="clause",
+                                section_number=current_section,
+                                start_position=segment_start,
+                                end_position=char_position,
+                            )
+                        )
 
                 # Start new segment
                 current_section = self._extract_section_number(line_stripped)
@@ -131,15 +134,17 @@ class TextPreprocessingService:
 
         # Add final segment
         if current_segment:
-            segment_text = '\n'.join(current_segment).strip()
+            segment_text = "\n".join(current_segment).strip()
             if segment_text:
-                segments.append(TextSegment(
-                    text=segment_text,
-                    segment_type='clause',
-                    section_number=current_section,
-                    start_position=segment_start,
-                    end_position=char_position
-                ))
+                segments.append(
+                    TextSegment(
+                        text=segment_text,
+                        segment_type="clause",
+                        section_number=current_section,
+                        start_position=segment_start,
+                        end_position=char_position,
+                    )
+                )
 
         logger.info(f"Segmented into {len(segments)} clauses")
         return segments
@@ -156,25 +161,27 @@ class TextPreprocessingService:
         """
         logger.info("Segmenting text into paragraphs...")
 
-        paragraphs = text.split('\n\n')
+        paragraphs = text.split("\n\n")
         segments = []
 
         char_position = 0
         for para in paragraphs:
             para_stripped = para.strip()
             if para_stripped:
-                segments.append(TextSegment(
-                    text=para_stripped,
-                    segment_type='paragraph',
-                    start_position=char_position,
-                    end_position=char_position + len(para_stripped)
-                ))
+                segments.append(
+                    TextSegment(
+                        text=para_stripped,
+                        segment_type="paragraph",
+                        start_position=char_position,
+                        end_position=char_position + len(para_stripped),
+                    )
+                )
             char_position += len(para) + 2  # +2 for \n\n
 
         logger.info(f"Segmented into {len(segments)} paragraphs")
         return segments
 
-    def extract_metadata(self, text: str) -> Dict[str, any]:
+    def extract_metadata(self, text: str) -> Dict[str, Any]:
         """
         Extract metadata from text.
 
@@ -189,11 +196,11 @@ class TextPreprocessingService:
         metadata = {
             "character_count": len(text),
             "word_count": len(text.split()),
-            "paragraph_count": len(text.split('\n\n')),
-            "line_count": len(text.split('\n')),
-            "avg_paragraph_length": 0,
+            "paragraph_count": len(text.split("\n\n")),
+            "line_count": len(text.split("\n")),
+            "avg_paragraph_length": 0.0,
             "has_numbering": False,
-            "estimated_clauses": 0
+            "estimated_clauses": 0,
         }
 
         # Check for numbered sections
@@ -207,9 +214,9 @@ class TextPreprocessingService:
         metadata["estimated_clauses"] = len(segments)
 
         # Average paragraph length
-        paragraphs = [p for p in text.split('\n\n') if p.strip()]
+        paragraphs = [p for p in text.split("\n\n") if p.strip()]
         if paragraphs:
-            metadata["avg_paragraph_length"] = sum(len(p) for p in paragraphs) / len(paragraphs)
+            metadata["avg_paragraph_length"] = float(sum(len(p) for p in paragraphs) / len(paragraphs))
 
         logger.info(f"Metadata extracted: {metadata}")
         return metadata
@@ -246,17 +253,17 @@ class TextPreprocessingService:
             Section number if found
         """
         # Try numbered patterns
-        match = re.match(r'^([\d\.]+)', line)
+        match = re.match(r"^([\d\.]+)", line)
         if match:
-            return match.group(1).rstrip('.')
+            return match.group(1).rstrip(".")
 
         # Try article/section patterns
-        match = re.match(r'^(Article|Section|SECTION)\s+([\d\.]+)', line, re.IGNORECASE)
+        match = re.match(r"^(Article|Section|SECTION)\s+([\d\.]+)", line, re.IGNORECASE)
         if match:
-            return match.group(2).rstrip('.')
+            return match.group(2).rstrip(".")
 
         # Try lettered patterns
-        match = re.match(r'^\(([a-z0-9]+)\)', line)
+        match = re.match(r"^\(([a-z0-9]+)\)", line)
         if match:
             return match.group(1)
 
@@ -276,10 +283,10 @@ class TextPreprocessingService:
 
         # Remove section numbering from start
         for pattern in self.section_patterns:
-            text = re.sub(f'^{pattern}', '', text)
+            text = re.sub(f"^{pattern}", "", text)
 
         # Clean up whitespace
-        text = re.sub(r'\s+', ' ', text)
+        text = re.sub(r"\s+", " ", text)
         text = text.strip()
 
         return text
@@ -295,7 +302,7 @@ class TextPreprocessingService:
             List of sentences
         """
         # Simple sentence splitting (can be improved with spaCy)
-        sentences = re.split(r'(?<=[.!?])\s+(?=[A-Z])', text)
+        sentences = re.split(r"(?<=[.!?])\s+(?=[A-Z])", text)
         return [s.strip() for s in sentences if s.strip()]
 
     def detect_language(self, text: str) -> str:
@@ -310,7 +317,7 @@ class TextPreprocessingService:
         """
         # For POC, assume English
         # In production, use language detection library
-        return 'en'
+        return "en"
 
     def extract_key_terms(self, text: str) -> List[str]:
         """
@@ -334,7 +341,7 @@ class TextPreprocessingService:
         key_terms.extend(quoted)
 
         # Extract defined terms (patterns like "X means Y")
-        definitions = re.findall(r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+(?:means|shall mean)', text)
+        definitions = re.findall(r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+(?:means|shall mean)", text)
         key_terms.extend(definitions)
 
         # Remove duplicates

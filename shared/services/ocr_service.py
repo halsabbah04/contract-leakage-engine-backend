@@ -1,14 +1,14 @@
 """Azure Document Intelligence (Form Recognizer) OCR service."""
 
 import time
-from typing import Optional
+
 from azure.ai.formrecognizer import DocumentAnalysisClient
 from azure.core.credentials import AzureKeyCredential
 from azure.core.exceptions import HttpResponseError
 
 from ..utils.config import get_settings
-from ..utils.logging import setup_logging
 from ..utils.exceptions import OCRError
+from ..utils.logging import setup_logging
 
 logger = setup_logging(__name__)
 settings = get_settings()
@@ -22,18 +22,14 @@ class OCRService:
         try:
             self.client = DocumentAnalysisClient(
                 endpoint=settings.DOC_INTEL_ENDPOINT,
-                credential=AzureKeyCredential(settings.DOC_INTEL_KEY)
+                credential=AzureKeyCredential(settings.DOC_INTEL_KEY),
             )
             logger.info("OCR service initialized successfully")
         except Exception as e:
             logger.error(f"Failed to initialize OCR service: {str(e)}")
             raise OCRError(f"Failed to initialize Azure Document Intelligence: {str(e)}")
 
-    def extract_text_from_pdf(
-        self,
-        file_content: bytes,
-        filename: str
-    ) -> tuple[str, dict]:
+    def extract_text_from_pdf(self, file_content: bytes, filename: str) -> tuple[str, dict]:
         """
         Extract text from PDF using Document Intelligence.
 
@@ -56,10 +52,7 @@ class OCRService:
             logger.info(f"Starting OCR for PDF: {filename}")
 
             # Begin analysis using prebuilt-read model
-            poller = self.client.begin_analyze_document(
-                model_id="prebuilt-read",
-                document=file_content
-            )
+            poller = self.client.begin_analyze_document(model_id="prebuilt-read", document=file_content)
 
             # Wait for completion (with timeout)
             logger.info("Waiting for OCR analysis to complete...")
@@ -77,7 +70,7 @@ class OCRService:
                 "api_version": settings.DOC_INTEL_API_VERSION,
                 "character_count": len(extracted_text),
                 "word_count": len(extracted_text.split()),
-                "extraction_timestamp": time.time()
+                "extraction_timestamp": time.time(),
             }
 
             logger.info(
@@ -96,11 +89,7 @@ class OCRService:
             logger.error(f"Unexpected error during OCR: {str(e)}")
             raise OCRError(f"OCR extraction failed: {str(e)}")
 
-    def extract_text_from_docx(
-        self,
-        file_content: bytes,
-        filename: str
-    ) -> tuple[str, dict]:
+    def extract_text_from_docx(self, file_content: bytes, filename: str) -> tuple[str, dict]:
         """
         Extract text from DOCX using Document Intelligence.
 
@@ -118,10 +107,7 @@ class OCRService:
             logger.info(f"Starting text extraction from DOCX: {filename}")
 
             # Use same prebuilt-read model (supports DOCX)
-            poller = self.client.begin_analyze_document(
-                model_id="prebuilt-read",
-                document=file_content
-            )
+            poller = self.client.begin_analyze_document(model_id="prebuilt-read", document=file_content)
 
             logger.info("Waiting for analysis to complete...")
             result = poller.result()
@@ -137,12 +123,11 @@ class OCRService:
                 "model_id": "prebuilt-read",
                 "character_count": len(extracted_text),
                 "word_count": len(extracted_text.split()),
-                "extraction_timestamp": time.time()
+                "extraction_timestamp": time.time(),
             }
 
             logger.info(
-                f"Text extraction completed: {metadata['page_count']} pages, "
-                f"{metadata['character_count']} chars"
+                f"Text extraction completed: {metadata['page_count']} pages, " f"{metadata['character_count']} chars"
             )
 
             return extracted_text, metadata
@@ -155,12 +140,7 @@ class OCRService:
             logger.error(f"Unexpected error during text extraction: {str(e)}")
             raise OCRError(f"Text extraction failed: {str(e)}")
 
-    def extract_text(
-        self,
-        file_content: bytes,
-        filename: str,
-        file_type: str
-    ) -> tuple[str, dict]:
+    def extract_text(self, file_content: bytes, filename: str, file_type: str) -> tuple[str, dict]:
         """
         Extract text from document (auto-detect type).
 
@@ -177,9 +157,9 @@ class OCRService:
         """
         file_type = file_type.lower()
 
-        if file_type == 'pdf':
+        if file_type == "pdf":
             return self.extract_text_from_pdf(file_content, filename)
-        elif file_type in ['docx', 'doc']:
+        elif file_type in ["docx", "doc"]:
             return self.extract_text_from_docx(file_content, filename)
         else:
             raise OCRError(f"Unsupported file type for OCR: {file_type}")
@@ -204,7 +184,7 @@ class OCRService:
 
             for page in result.pages:
                 for line in page.lines:
-                    if hasattr(line, 'confidence') and line.confidence is not None:
+                    if hasattr(line, "confidence") and line.confidence is not None:
                         total_confidence += line.confidence
                         line_count += 1
 
@@ -219,11 +199,7 @@ class OCRService:
             logger.warning(f"Could not calculate confidence: {str(e)}")
             return 0.0
 
-    def extract_with_layout(
-        self,
-        file_content: bytes,
-        filename: str
-    ) -> tuple[str, dict, list]:
+    def extract_with_layout(self, file_content: bytes, filename: str) -> tuple[str, dict, list]:
         """
         Extract text with layout information (advanced).
 
@@ -243,10 +219,7 @@ class OCRService:
         try:
             logger.info(f"Starting layout-aware extraction: {filename}")
 
-            poller = self.client.begin_analyze_document(
-                model_id="prebuilt-read",
-                document=file_content
-            )
+            poller = self.client.begin_analyze_document(model_id="prebuilt-read", document=file_content)
 
             result = poller.result()
 
@@ -261,15 +234,17 @@ class OCRService:
                     "page_number": page.page_number,
                     "width": page.width,
                     "height": page.height,
-                    "lines": []
+                    "lines": [],
                 }
 
                 for line in page.lines:
-                    page_elements["lines"].append({
-                        "text": line.content,
-                        "bounding_box": line.polygon if hasattr(line, 'polygon') else None,
-                        "confidence": line.confidence if hasattr(line, 'confidence') else None
-                    })
+                    page_elements["lines"].append(
+                        {
+                            "text": line.content,
+                            "bounding_box": (line.polygon if hasattr(line, "polygon") else None),
+                            "confidence": (line.confidence if hasattr(line, "confidence") else None),
+                        }
+                    )
 
                 layout_elements.append(page_elements)
 
@@ -279,7 +254,7 @@ class OCRService:
                 "language": result.languages[0] if result.languages else "unknown",
                 "has_layout": True,
                 "character_count": len(text),
-                "extraction_timestamp": time.time()
+                "extraction_timestamp": time.time(),
             }
 
             logger.info(f"Layout extraction completed: {metadata['page_count']} pages")

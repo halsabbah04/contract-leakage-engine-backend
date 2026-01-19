@@ -1,11 +1,11 @@
 """Repository for Contract operations."""
 
-from typing import List, Optional
 from datetime import datetime
+from typing import List, Optional
 
-from .base_repository import BaseRepository
 from ...models.contract import Contract, ContractStatus
 from ...utils.logging import setup_logging
+from .base_repository import BaseRepository
 
 logger = setup_logging(__name__)
 
@@ -30,8 +30,12 @@ class ContractRepository(BaseRepository[Contract]):
         # contract_id is both the ID and partition key
         return self.read(contract_id, contract_id)
 
-    def update_status(self, contract_id: str, status: ContractStatus,
-                      error_message: Optional[str] = None) -> Contract:
+    def update_status(
+        self,
+        contract_id: str,
+        status: ContractStatus,
+        error_message: Optional[str] = None,
+    ) -> Contract:
         """
         Update contract processing status.
 

@@ -1,14 +1,14 @@
 """Azure Blob Storage service for contract file storage."""
 
-import io
-from typing import Optional, BinaryIO
 from datetime import datetime, timedelta
-from azure.storage.blob import BlobServiceClient, BlobClient, ContentSettings, generate_blob_sas, BlobSasPermissions
+from typing import Optional
+
 from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
+from azure.storage.blob import BlobClient, BlobSasPermissions, BlobServiceClient, ContentSettings, generate_blob_sas
 
 from ..utils.config import get_settings
-from ..utils.logging import setup_logging
 from ..utils.exceptions import StorageError
+from ..utils.logging import setup_logging
 
 logger = setup_logging(__name__)
 settings = get_settings()
@@ -20,9 +20,7 @@ class StorageService:
     def __init__(self):
         """Initialize storage service."""
         try:
-            self.blob_service_client = BlobServiceClient.from_connection_string(
-                settings.STORAGE_CONNECTION_STRING
-            )
+            self.blob_service_client = BlobServiceClient.from_connection_string(settings.STORAGE_CONNECTION_STRING)
             self.container_name = settings.STORAGE_CONTAINER_NAME
             logger.info(f"Storage service initialized for container: {self.container_name}")
         except Exception as e:
@@ -34,7 +32,7 @@ class StorageService:
         file_content: bytes,
         contract_id: str,
         filename: str,
-        content_type: Optional[str] = None
+        content_type: Optional[str] = None,
     ) -> str:
         """
         Upload a contract file to blob storage.
@@ -58,10 +56,7 @@ class StorageService:
             logger.info(f"Uploading file to blob: {blob_name}")
 
             # Get blob client
-            blob_client = self.blob_service_client.get_blob_client(
-                container=self.container_name,
-                blob=blob_name
-            )
+            blob_client = self.blob_service_client.get_blob_client(container=self.container_name, blob=blob_name)
 
             # Set content settings
             content_settings = None
@@ -76,8 +71,8 @@ class StorageService:
                 metadata={
                     "contract_id": contract_id,
                     "original_filename": filename,
-                    "upload_timestamp": datetime.utcnow().isoformat()
-                }
+                    "upload_timestamp": datetime.utcnow().isoformat(),
+                },
             )
 
             # Get blob URL
@@ -94,12 +89,7 @@ class StorageService:
             logger.error(f"Failed to upload file to blob storage: {str(e)}")
             raise StorageError(f"Failed to upload file: {str(e)}")
 
-    def upload_extracted_text(
-        self,
-        text_content: str,
-        contract_id: str,
-        filename: str = "extracted_text.txt"
-    ) -> str:
+    def upload_extracted_text(self, text_content: str, contract_id: str, filename: str = "extracted_text.txt") -> str:
         """
         Upload extracted text to blob storage.
 
@@ -121,24 +111,21 @@ class StorageService:
             logger.info(f"Uploading extracted text to blob: {blob_name}")
 
             # Get blob client
-            blob_client = self.blob_service_client.get_blob_client(
-                container=self.container_name,
-                blob=blob_name
-            )
+            blob_client = self.blob_service_client.get_blob_client(container=self.container_name, blob=blob_name)
 
             # Convert text to bytes
-            text_bytes = text_content.encode('utf-8')
+            text_bytes = text_content.encode("utf-8")
 
             # Upload
             blob_client.upload_blob(
                 text_bytes,
                 overwrite=True,
-                content_settings=ContentSettings(content_type='text/plain'),
+                content_settings=ContentSettings(content_type="text/plain"),
                 metadata={
                     "contract_id": contract_id,
                     "extraction_timestamp": datetime.utcnow().isoformat(),
-                    "character_count": str(len(text_content))
-                }
+                    "character_count": str(len(text_content)),
+                },
             )
 
             blob_url = blob_client.url
@@ -198,7 +185,7 @@ class StorageService:
         """
         try:
             content_bytes = self.download_blob(blob_url)
-            return content_bytes.decode('utf-8')
+            return content_bytes.decode("utf-8")
         except UnicodeDecodeError as e:
             logger.error(f"Failed to decode blob as UTF-8: {str(e)}")
             raise StorageError(f"Blob content is not valid UTF-8 text: {str(e)}")
@@ -228,9 +215,9 @@ class StorageService:
                 account_name=blob_client.account_name,
                 container_name=blob_client.container_name,
                 blob_name=blob_client.blob_name,
-                account_key=settings.STORAGE_CONNECTION_STRING.split('AccountKey=')[1].split(';')[0],
+                account_key=settings.STORAGE_CONNECTION_STRING.split("AccountKey=")[1].split(";")[0],
                 permission=BlobSasPermissions(read=True),
-                expiry=datetime.utcnow() + timedelta(hours=expiry_hours)
+                expiry=datetime.utcnow() + timedelta(hours=expiry_hours),
             )
 
             # Construct SAS URL
@@ -286,9 +273,7 @@ class StorageService:
         try:
             logger.info(f"Listing blobs for contract: {contract_id}")
 
-            container_client = self.blob_service_client.get_container_client(
-                self.container_name
-            )
+            container_client = self.blob_service_client.get_container_client(self.container_name)
 
             # List blobs with prefix
             prefix = f"contracts/{contract_id}/"
@@ -296,14 +281,16 @@ class StorageService:
 
             blob_list = []
             for blob in blobs:
-                blob_list.append({
-                    "name": blob.name,
-                    "url": f"{container_client.url}/{blob.name}",
-                    "size": blob.size,
-                    "created": blob.creation_time,
-                    "modified": blob.last_modified,
-                    "content_type": blob.content_settings.content_type if blob.content_settings else None
-                })
+                blob_list.append(
+                    {
+                        "name": blob.name,
+                        "url": f"{container_client.url}/{blob.name}",
+                        "size": blob.size,
+                        "created": blob.creation_time,
+                        "modified": blob.last_modified,
+                        "content_type": (blob.content_settings.content_type if blob.content_settings else None),
+                    }
+                )
 
             logger.info(f"Found {len(blob_list)} blobs for contract {contract_id}")
             return blob_list

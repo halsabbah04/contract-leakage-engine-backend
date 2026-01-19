@@ -1,16 +1,14 @@
 """Clause extraction service - orchestrates text segmentation and NLP analysis."""
 
-import uuid
-from typing import List, Optional
-from datetime import datetime
+from typing import Dict, List, Optional
 
-from .text_preprocessing_service import TextPreprocessingService, TextSegment
-from .nlp_service import NLPService
-from ..models.clause import Clause, ClauseType
-from ..db import get_cosmos_client, ClauseRepository, ContractRepository
+from ..db import ClauseRepository, ContractRepository, get_cosmos_client
+from ..models.clause import Clause
 from ..models.contract import ContractStatus
-from ..utils.logging import setup_logging
 from ..utils.exceptions import ClauseExtractionError
+from ..utils.logging import setup_logging
+from .nlp_service import NLPService
+from .text_preprocessing_service import TextPreprocessingService, TextSegment
 
 logger = setup_logging(__name__)
 
@@ -24,11 +22,7 @@ class ClauseExtractionService:
         self.nlp_service = NLPService()
         logger.info("Clause extraction service initialized")
 
-    def extract_clauses_from_contract(
-        self,
-        contract_id: str,
-        contract_text: str
-    ) -> List[Clause]:
+    def extract_clauses_from_contract(self, contract_id: str, contract_text: str) -> List[Clause]:
         """
         Extract clauses from contract text.
 
@@ -99,12 +93,7 @@ class ClauseExtractionService:
             self._mark_contract_failed(contract_id, f"Clause extraction failed: {str(e)}")
             raise ClauseExtractionError(f"Failed to extract clauses: {str(e)}")
 
-    def _process_segment(
-        self,
-        segment: TextSegment,
-        contract_id: str,
-        index: int
-    ) -> Optional[Clause]:
+    def _process_segment(self, segment: TextSegment, contract_id: str, index: int) -> Optional[Clause]:
         """
         Process a text segment into a Clause object.
 
@@ -132,13 +121,14 @@ class ClauseExtractionService:
                 clause_subtype=None,  # Can be refined later
                 original_text=segment.text,
                 normalized_summary=analysis["normalized_summary"],
+                page_number=None,
                 section_number=segment.section_number,
                 start_position=segment.start_position,
                 end_position=segment.end_position,
                 entities=analysis["entities"],
                 risk_signals=analysis["risk_signals"],
                 extraction_confidence=analysis.get("classification_confidence", 0.0),
-                embedding=None  # Will be added in Phase 5 (RAG)
+                embedding=None,  # Will be added in Phase 5 (RAG)
             )
 
             return clause
@@ -178,11 +168,7 @@ class ClauseExtractionService:
             logger.error(f"Re-extraction failed: {str(e)}")
             raise ClauseExtractionError(f"Failed to re-extract clauses: {str(e)}")
 
-    def get_clauses_by_type(
-        self,
-        contract_id: str,
-        clause_type: str
-    ) -> List[Clause]:
+    def get_clauses_by_type(self, contract_id: str, clause_type: str) -> List[Clause]:
         """
         Get all clauses of a specific type.
 
@@ -248,7 +234,7 @@ class ClauseExtractionService:
         clauses = clause_repo.get_by_contract_id(contract_id)
 
         # Count by type
-        type_counts = {}
+        type_counts: Dict[str, int] = {}
         for clause in clauses:
             type_counts[clause.clause_type] = type_counts.get(clause.clause_type, 0) + 1
 
@@ -265,7 +251,7 @@ class ClauseExtractionService:
             "total_risk_signals": total_risk_signals,
             "clauses_with_risk_signals": clauses_with_risks,
             "average_extraction_confidence": avg_confidence,
-            "most_common_type": max(type_counts, key=type_counts.get) if type_counts else None
+            "most_common_type": (max(type_counts, key=lambda k: type_counts[k]) if type_counts else None),
         }
 
         return stats
@@ -275,10 +261,6 @@ class ClauseExtractionService:
         try:
             cosmos_client = get_cosmos_client()
             contract_repo = ContractRepository(cosmos_client.contracts_container)
-            contract_repo.update_status(
-                contract_id,
-                ContractStatus.FAILED,
-                error_message
-            )
+            contract_repo.update_status(contract_id, ContractStatus.FAILED, error_message)
         except Exception as e:
             logger.error(f"Failed to mark contract as failed: {str(e)}")

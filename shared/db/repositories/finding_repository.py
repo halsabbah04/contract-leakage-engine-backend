@@ -1,10 +1,10 @@
 """Repository for LeakageFinding operations."""
 
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
-from .base_repository import BaseRepository
-from ...models.finding import LeakageFinding, Severity, LeakageCategory
+from ...models.finding import LeakageCategory, LeakageFinding, Severity
 from ...utils.logging import setup_logging
+from .base_repository import BaseRepository
 
 logger = setup_logging(__name__)
 
@@ -62,7 +62,7 @@ class FindingRepository(BaseRepository[LeakageFinding]):
         """
         parameters = [
             {"name": "@contract_id", "value": contract_id},
-            {"name": "@severity", "value": severity.value}
+            {"name": "@severity", "value": severity.value},
         ]
 
         logger.info(f"Getting {severity.value} severity findings for contract {contract_id}")
@@ -87,7 +87,7 @@ class FindingRepository(BaseRepository[LeakageFinding]):
         """
         parameters = [
             {"name": "@contract_id", "value": contract_id},
-            {"name": "@category", "value": category.value}
+            {"name": "@category", "value": category.value},
         ]
 
         logger.info(f"Getting {category.value} findings for contract {contract_id}")
@@ -134,9 +134,9 @@ class FindingRepository(BaseRepository[LeakageFinding]):
             AND c.type = 'finding'
             ORDER BY c.estimated_impact.value DESC
         """
-        parameters = [
+        parameters: List[Dict[str, Any]] = [
             {"name": "@contract_id", "value": contract_id},
-            {"name": "@min_impact", "value": min_impact}
+            {"name": "@min_impact", "value": min_impact},
         ]
 
         logger.info(f"Getting findings with impact >= ${min_impact} for contract {contract_id}")

@@ -3,13 +3,14 @@
 List all contracts with optional filtering.
 """
 
-import azure.functions as func
 import json
 
+import azure.functions as func
+
+from shared.db import ContractRepository, get_cosmos_client
 from shared.models.contract import ContractStatus
-from shared.db import get_cosmos_client, ContractRepository
-from shared.utils.logging import setup_logging
 from shared.utils.exceptions import DatabaseError
+from shared.utils.logging import setup_logging
 
 logger = setup_logging(__name__)
 
@@ -32,8 +33,8 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
 
     try:
         # Get query parameters
-        status_param = req.params.get('status')
-        limit = int(req.params.get('limit', '50'))
+        status_param = req.params.get("status")
+        limit = int(req.params.get("limit", "50"))
 
         logger.info(f"Listing contracts (status={status_param}, limit={limit})")
 
@@ -48,12 +49,14 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                 contracts = contract_repo.get_by_status(status)
             except ValueError:
                 return func.HttpResponse(
-                    json.dumps({
-                        "error": f"Invalid status: {status_param}",
-                        "valid_statuses": [s.value for s in ContractStatus]
-                    }),
+                    json.dumps(
+                        {
+                            "error": f"Invalid status: {status_param}",
+                            "valid_statuses": [s.value for s in ContractStatus],
+                        }
+                    ),
                     status_code=400,
-                    mimetype="application/json"
+                    mimetype="application/json",
                 )
         else:
             contracts = contract_repo.get_recent_contracts(limit)
@@ -70,21 +73,18 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                     "source": c.source,
                     "counterparty": c.counterparty,
                     "created_at": c.created_at.isoformat() if c.created_at else None,
-                    "contract_value_estimate": c.contract_value_estimate
+                    "contract_value_estimate": c.contract_value_estimate,
                 }
                 for c in contracts[:limit]
             ],
             "total": len(contracts),
-            "filters": {
-                "status": status_param,
-                "limit": limit
-            }
+            "filters": {"status": status_param, "limit": limit},
         }
 
         return func.HttpResponse(
             json.dumps(response_data, default=str),
             status_code=200,
-            mimetype="application/json"
+            mimetype="application/json",
         )
 
     except DatabaseError as e:
@@ -92,7 +92,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         return func.HttpResponse(
             json.dumps({"error": "Database error occurred", "details": str(e)}),
             status_code=500,
-            mimetype="application/json"
+            mimetype="application/json",
         )
 
     except Exception as e:
@@ -100,5 +100,5 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         return func.HttpResponse(
             json.dumps({"error": "An unexpected error occurred", "details": str(e)}),
             status_code=500,
-            mimetype="application/json"
+            mimetype="application/json",
         )

@@ -1,27 +1,27 @@
 """Azure AI Search service for vector and hybrid search."""
 
 import time
-from typing import List, Dict, Optional, Any
+from typing import Any, Dict, List, Optional
+
 from azure.core.credentials import AzureKeyCredential
 from azure.search.documents import SearchClient
 from azure.search.documents.indexes import SearchIndexClient
 from azure.search.documents.indexes.models import (
-    SearchIndex,
+    HnswAlgorithmConfiguration,
+    SearchableField,
     SearchField,
     SearchFieldDataType,
+    SearchIndex,
     SimpleField,
-    SearchableField,
     VectorSearch,
     VectorSearchProfile,
-    HnswAlgorithmConfiguration,
 )
 from azure.search.documents.models import VectorizedQuery
 
 from ..models.clause import Clause
-from ..db import get_cosmos_client, ClauseRepository
 from ..utils.config import get_settings
-from ..utils.logging import setup_logging
 from ..utils.exceptions import SearchServiceError
+from ..utils.logging import setup_logging
 
 logger = setup_logging(__name__)
 settings = get_settings()
@@ -42,15 +42,12 @@ class SearchService:
             # Initialize clients
             credential = AzureKeyCredential(self.search_key)
 
-            self.index_client = SearchIndexClient(
-                endpoint=self.search_endpoint,
-                credential=credential
-            )
+            self.index_client = SearchIndexClient(endpoint=self.search_endpoint, credential=credential)
 
             self.search_client = SearchClient(
                 endpoint=self.search_endpoint,
                 index_name=self.index_name,
-                credential=credential
+                credential=credential,
             )
 
             logger.info(f"Search service initialized: index={self.index_name}")
@@ -75,18 +72,26 @@ class SearchService:
                 SearchableField(name="clause_type", type=SearchFieldDataType.String, filterable=True),
                 SearchableField(name="original_text", type=SearchFieldDataType.String),
                 SearchableField(name="normalized_summary", type=SearchFieldDataType.String),
-                SimpleField(name="section_number", type=SearchFieldDataType.String, filterable=True),
+                SimpleField(
+                    name="section_number",
+                    type=SearchFieldDataType.String,
+                    filterable=True,
+                ),
                 SimpleField(
                     name="risk_signals",
                     type=SearchFieldDataType.Collection(SearchFieldDataType.String),
-                    filterable=True
+                    filterable=True,
                 ),
-                SimpleField(name="extraction_confidence", type=SearchFieldDataType.Double, filterable=True),
+                SimpleField(
+                    name="extraction_confidence",
+                    type=SearchFieldDataType.Double,
+                    filterable=True,
+                ),
                 SearchField(
                     name="embedding",
                     type=SearchFieldDataType.Collection(SearchFieldDataType.Single),
                     vector_search_dimensions=settings.EMBEDDING_DIMENSIONS,
-                    vector_search_profile_name="clause-vector-profile"
+                    vector_search_profile_name="clause-vector-profile",
                 ),
             ]
 
@@ -99,24 +104,20 @@ class SearchService:
                             "m": 4,
                             "efConstruction": 400,
                             "efSearch": 500,
-                            "metric": "cosine"
-                        }
+                            "metric": "cosine",
+                        },
                     )
                 ],
                 profiles=[
                     VectorSearchProfile(
                         name="clause-vector-profile",
-                        algorithm_configuration_name="clause-hnsw-algorithm"
+                        algorithm_configuration_name="clause-hnsw-algorithm",
                     )
-                ]
+                ],
             )
 
             # Create index
-            index = SearchIndex(
-                name=self.index_name,
-                fields=fields,
-                vector_search=vector_search
-            )
+            index = SearchIndex(name=self.index_name, fields=fields, vector_search=vector_search)
 
             # Create or update
             result = self.index_client.create_or_update_index(index)
@@ -176,7 +177,7 @@ class SearchService:
             indexed_count = 0
 
             for i in range(0, len(documents), batch_size):
-                batch = documents[i:i + batch_size]
+                batch = documents[i : i + batch_size]
 
                 try:
                     results = self.search_client.upload_documents(documents=batch)
@@ -212,7 +213,7 @@ class SearchService:
         query_vector: List[float],
         contract_id: Optional[str] = None,
         top_k: int = 10,
-        min_score: float = 0.7
+        min_score: float = 0.7,
     ) -> List[Dict[str, Any]]:
         """
         Perform vector similarity search.
@@ -230,11 +231,7 @@ class SearchService:
             logger.info(f"Vector search: top_k={top_k}, contract={contract_id}")
 
             # Create vector query
-            vector_query = VectorizedQuery(
-                vector=query_vector,
-                k_nearest_neighbors=top_k,
-                fields="embedding"
-            )
+            vector_query = VectorizedQuery(vector=query_vector, k_nearest_neighbors=top_k, fields="embedding")
 
             # Build filter
             filter_expr = None
@@ -246,24 +243,26 @@ class SearchService:
                 search_text=None,
                 vector_queries=[vector_query],
                 filter=filter_expr,
-                top=top_k
+                top=top_k,
             )
 
             # Parse results
             search_results = []
             for result in results:
-                score = result['@search.score']
+                score = result["@search.score"]
 
                 if score >= min_score:
-                    search_results.append({
-                        'clause_id': result['id'],
-                        'contract_id': result['contract_id'],
-                        'clause_type': result['clause_type'],
-                        'original_text': result['original_text'],
-                        'normalized_summary': result['normalized_summary'],
-                        'risk_signals': result.get('risk_signals', []),
-                        'similarity_score': score
-                    })
+                    search_results.append(
+                        {
+                            "clause_id": result["id"],
+                            "contract_id": result["contract_id"],
+                            "clause_type": result["clause_type"],
+                            "original_text": result["original_text"],
+                            "normalized_summary": result["normalized_summary"],
+                            "risk_signals": result.get("risk_signals", []),
+                            "similarity_score": score,
+                        }
+                    )
 
             logger.info(f"Vector search returned {len(search_results)} results")
 
@@ -279,7 +278,7 @@ class SearchService:
         query_vector: List[float],
         contract_id: Optional[str] = None,
         top_k: int = 10,
-        min_score: float = 0.6
+        min_score: float = 0.6,
     ) -> List[Dict[str, Any]]:
         """
         Perform hybrid search (vector + keyword).
@@ -300,11 +299,7 @@ class SearchService:
             logger.info(f"Hybrid search: query='{query_text[:50]}...', top_k={top_k}")
 
             # Create vector query
-            vector_query = VectorizedQuery(
-                vector=query_vector,
-                k_nearest_neighbors=top_k,
-                fields="embedding"
-            )
+            vector_query = VectorizedQuery(vector=query_vector, k_nearest_neighbors=top_k, fields="embedding")
 
             # Build filter
             filter_expr = None
@@ -318,24 +313,26 @@ class SearchService:
                 filter=filter_expr,
                 top=top_k,
                 query_type="semantic",
-                semantic_configuration_name=None  # Use default
+                semantic_configuration_name=None,  # Use default
             )
 
             # Parse results
             search_results = []
             for result in results:
-                score = result['@search.score']
+                score = result["@search.score"]
 
                 if score >= min_score:
-                    search_results.append({
-                        'clause_id': result['id'],
-                        'contract_id': result['contract_id'],
-                        'clause_type': result['clause_type'],
-                        'original_text': result['original_text'],
-                        'normalized_summary': result['normalized_summary'],
-                        'risk_signals': result.get('risk_signals', []),
-                        'combined_score': score
-                    })
+                    search_results.append(
+                        {
+                            "clause_id": result["id"],
+                            "contract_id": result["contract_id"],
+                            "clause_type": result["clause_type"],
+                            "original_text": result["original_text"],
+                            "normalized_summary": result["normalized_summary"],
+                            "risk_signals": result.get("risk_signals", []),
+                            "combined_score": score,
+                        }
+                    )
 
             logger.info(f"Hybrid search returned {len(search_results)} results")
 
@@ -365,11 +362,11 @@ class SearchService:
                 search_text="*",
                 filter=f"contract_id eq '{contract_id}'",
                 select="id",
-                top=1000
+                top=1000,
             )
 
             # Collect IDs
-            clause_ids = [r['id'] for r in results]
+            clause_ids = [r["id"] for r in results]
 
             if not clause_ids:
                 logger.info("No clauses found to delete")
@@ -408,7 +405,7 @@ class SearchService:
             "section_number": clause.section_number,
             "risk_signals": clause.risk_signals or [],
             "extraction_confidence": clause.extraction_confidence or 0.0,
-            "embedding": clause.embedding or []
+            "embedding": clause.embedding or [],
         }
 
     def get_index_statistics(self) -> Dict[str, Any]:

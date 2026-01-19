@@ -3,15 +3,15 @@
 Coordinates file upload, storage, and text extraction.
 """
 
-from typing import Optional
 from datetime import datetime
+from typing import Optional
 
-from .storage_service import StorageService
-from .ocr_service import OCRService
-from ..db import get_cosmos_client, ContractRepository
+from ..db import ContractRepository, get_cosmos_client
 from ..models.contract import ContractStatus
+from ..utils.exceptions import DocumentProcessingError, OCRError, StorageError
 from ..utils.logging import setup_logging
-from ..utils.exceptions import DocumentProcessingError, StorageError, OCRError
+from .ocr_service import OCRService
+from .storage_service import StorageService
 
 logger = setup_logging(__name__)
 
@@ -31,7 +31,7 @@ class DocumentService:
         contract_id: str,
         filename: str,
         file_type: str,
-        content_type: Optional[str] = None
+        content_type: Optional[str] = None,
     ) -> dict:
         """
         Process an uploaded contract file.
@@ -66,12 +66,7 @@ class DocumentService:
             logger.info("Step 1: Uploading file to blob storage...")
             contract_repo.update_status(contract_id, ContractStatus.UPLOADED)
 
-            blob_uri = self.storage_service.upload_contract_file(
-                file_content,
-                contract_id,
-                filename,
-                content_type
-            )
+            blob_uri = self.storage_service.upload_contract_file(file_content, contract_id, filename, content_type)
 
             # Update contract with blob URI
             contract_repo.set_blob_uri(contract_id, blob_uri)
@@ -82,11 +77,7 @@ class DocumentService:
             logger.info("Step 2: Extracting text...")
             contract_repo.update_status(contract_id, ContractStatus.EXTRACTING_TEXT)
 
-            extracted_text, ocr_metadata = self.ocr_service.extract_text(
-                file_content,
-                filename,
-                file_type
-            )
+            extracted_text, ocr_metadata = self.ocr_service.extract_text(file_content, filename, file_type)
 
             logger.info(
                 f"Text extracted: {ocr_metadata['character_count']} chars, "
@@ -100,7 +91,7 @@ class DocumentService:
             extracted_text_uri = self.storage_service.upload_extracted_text(
                 extracted_text,
                 contract_id,
-                f"extracted_text_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.txt"
+                f"extracted_text_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.txt",
             )
 
             logger.info(f"Extracted text stored: {extracted_text_uri}")
@@ -115,13 +106,13 @@ class DocumentService:
                 "extracted_text_uri": extracted_text_uri,
                 "extracted_text": extracted_text,  # Include for next steps
                 "metadata": {
-                    "page_count": ocr_metadata.get('page_count', 0),
-                    "character_count": ocr_metadata.get('character_count', 0),
-                    "word_count": ocr_metadata.get('word_count', 0),
-                    "language": ocr_metadata.get('language', 'unknown'),
-                    "confidence": ocr_metadata.get('confidence', 0.0),
-                    "extraction_method": "azure_document_intelligence"
-                }
+                    "page_count": ocr_metadata.get("page_count", 0),
+                    "character_count": ocr_metadata.get("character_count", 0),
+                    "word_count": ocr_metadata.get("word_count", 0),
+                    "language": ocr_metadata.get("language", "unknown"),
+                    "confidence": ocr_metadata.get("confidence", 0.0),
+                    "extraction_method": "azure_document_intelligence",
+                },
             }
 
             logger.info(f"Document processing completed for contract {contract_id}")
@@ -171,9 +162,7 @@ class DocumentService:
                 return None
 
             # Download extracted text
-            extracted_text = self.storage_service.download_blob_text(
-                contract.extracted_text_uri
-            )
+            extracted_text = self.storage_service.download_blob_text(contract.extracted_text_uri)
 
             logger.info(f"Retrieved extracted text: {len(extracted_text)} characters")
             return extracted_text
@@ -217,12 +206,13 @@ class DocumentService:
             file_content = self.storage_service.download_blob(contract.blob_uri)
 
             # Re-process
+            file_type = contract.file_type if contract.file_type else "pdf"
             return self.process_uploaded_contract(
                 file_content,
                 contract_id,
                 contract.contract_name,
-                contract.file_type,
-                None
+                file_type,
+                None,
             )
 
         except Exception as e:
@@ -234,10 +224,6 @@ class DocumentService:
         try:
             cosmos_client = get_cosmos_client()
             contract_repo = ContractRepository(cosmos_client.contracts_container)
-            contract_repo.update_status(
-                contract_id,
-                ContractStatus.FAILED,
-                error_message
-            )
+            contract_repo.update_status(contract_id, ContractStatus.FAILED, error_message)
         except Exception as e:
             logger.error(f"Failed to mark contract as failed: {str(e)}")

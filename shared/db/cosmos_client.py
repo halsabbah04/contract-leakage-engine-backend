@@ -1,13 +1,14 @@
 """Cosmos DB client wrapper for the Contract Leakage Engine."""
 
-from typing import Optional
-from azure.cosmos import CosmosClient, DatabaseProxy, ContainerProxy
-from azure.cosmos.exceptions import CosmosResourceNotFoundError, CosmosHttpResponseError
 from functools import lru_cache
+from typing import Optional
+
+from azure.cosmos import ContainerProxy, CosmosClient, DatabaseProxy
+from azure.cosmos.exceptions import CosmosHttpResponseError, CosmosResourceNotFoundError
 
 from ..utils.config import get_settings
+from ..utils.exceptions import ConfigurationError, DatabaseError
 from ..utils.logging import setup_logging
-from ..utils.exceptions import DatabaseError, ConfigurationError
 
 logger = setup_logging(__name__)
 
@@ -33,9 +34,7 @@ class CosmosDBClient:
         if self._client is None:
             try:
                 logger.info("Initializing Cosmos DB client")
-                self._client = CosmosClient.from_connection_string(
-                    self.settings.COSMOS_CONNECTION_STRING
-                )
+                self._client = CosmosClient.from_connection_string(self.settings.COSMOS_CONNECTION_STRING)
             except Exception as e:
                 logger.error(f"Failed to initialize Cosmos DB client: {str(e)}")
                 raise ConfigurationError(
@@ -49,15 +48,16 @@ class CosmosDBClient:
         if self._database is None:
             try:
                 logger.info(f"Getting database: {self.settings.COSMOS_DATABASE_NAME}")
-                self._database = self.client.get_database_client(
-                    self.settings.COSMOS_DATABASE_NAME
-                )
+                self._database = self.client.get_database_client(self.settings.COSMOS_DATABASE_NAME)
             except CosmosResourceNotFoundError:
                 logger.error(f"Database {self.settings.COSMOS_DATABASE_NAME} not found")
                 raise DatabaseError(
                     f"Database '{self.settings.COSMOS_DATABASE_NAME}' not found. "
                     "Please create it first using Azure Portal or setup scripts."
                 )
+            except CosmosHttpResponseError as e:
+                logger.error(f"Cosmos HTTP error accessing database: {str(e)}")
+                raise DatabaseError(f"Failed to access database (HTTP {e.status_code}): {str(e)}")
             except Exception as e:
                 logger.error(f"Failed to get database: {str(e)}")
                 raise DatabaseError(f"Failed to access database: {str(e)}")
@@ -79,15 +79,16 @@ class CosmosDBClient:
         if container_name not in self._containers:
             try:
                 logger.info(f"Getting container: {container_name}")
-                self._containers[container_name] = self.database.get_container_client(
-                    container_name
-                )
+                self._containers[container_name] = self.database.get_container_client(container_name)
             except CosmosResourceNotFoundError:
                 logger.error(f"Container {container_name} not found")
                 raise DatabaseError(
                     f"Container '{container_name}' not found in database '{self.settings.COSMOS_DATABASE_NAME}'. "
                     "Please create it first using Azure Portal or setup scripts."
                 )
+            except CosmosHttpResponseError as e:
+                logger.error(f"Cosmos HTTP error accessing container {container_name}: {str(e)}")
+                raise DatabaseError(f"Failed to access container '{container_name}' (HTTP {e.status_code}): {str(e)}")
             except Exception as e:
                 logger.error(f"Failed to get container {container_name}: {str(e)}")
                 raise DatabaseError(f"Failed to access container '{container_name}': {str(e)}")
@@ -112,6 +113,11 @@ class CosmosDBClient:
     def sessions_container(self) -> ContainerProxy:
         """Get analysis_sessions container."""
         return self.get_container(self.settings.COSMOS_SESSIONS_CONTAINER)
+
+    @property
+    def overrides_container(self) -> ContainerProxy:
+        """Get user_overrides container."""
+        return self.get_container(self.settings.COSMOS_OVERRIDES_CONTAINER)
 
     def close(self):
         """Close the Cosmos DB client connection."""

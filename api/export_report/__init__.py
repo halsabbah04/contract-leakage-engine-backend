@@ -3,14 +3,15 @@
 Generate and download analysis reports in PDF or Excel format.
 """
 
-import azure.functions as func
 import json
 from datetime import datetime
 
+import azure.functions as func
+
+from shared.db import ContractRepository, get_cosmos_client
 from shared.services.report_service import ReportService
-from shared.db import get_cosmos_client, ContractRepository
+from shared.utils.exceptions import ContractNotFoundError, ReportGenerationError
 from shared.utils.logging import setup_logging
-from shared.utils.exceptions import ReportGenerationError, ContractNotFoundError
 
 logger = setup_logging(__name__)
 
@@ -34,29 +35,29 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
 
     try:
         # Get contract_id from route parameter
-        contract_id = req.route_params.get('contract_id')
+        contract_id = req.route_params.get("contract_id")
 
         if not contract_id:
             logger.warning("No contract_id provided")
             return func.HttpResponse(
                 json.dumps({"error": "contract_id is required"}),
                 status_code=400,
-                mimetype="application/json"
+                mimetype="application/json",
             )
 
         # Get format from query parameters
-        report_format = req.params.get('format', 'pdf').lower()
+        report_format = req.params.get("format", "pdf").lower()
 
-        if report_format not in ['pdf', 'excel']:
+        if report_format not in ["pdf", "excel"]:
             logger.warning(f"Invalid format requested: {report_format}")
             return func.HttpResponse(
                 json.dumps({"error": "format must be 'pdf' or 'excel'"}),
                 status_code=400,
-                mimetype="application/json"
+                mimetype="application/json",
             )
 
         # Get include_clauses parameter (PDF only)
-        include_clauses = req.params.get('include_clauses', 'false').lower() == 'true'
+        include_clauses = req.params.get("include_clauses", "false").lower() == "true"
 
         logger.info(f"Exporting {report_format} report for contract {contract_id}")
 
@@ -70,30 +71,27 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             return func.HttpResponse(
                 json.dumps({"error": f"Contract '{contract_id}' not found"}),
                 status_code=404,
-                mimetype="application/json"
+                mimetype="application/json",
             )
 
         # Generate report
         report_service = ReportService()
 
-        if report_format == 'pdf':
+        if report_format == "pdf":
             logger.info(f"Generating PDF report (include_clauses={include_clauses})")
-            report_bytes = report_service.generate_pdf_report(
-                contract_id=contract_id,
-                include_clauses=include_clauses
-            )
-            content_type = 'application/pdf'
-            file_extension = 'pdf'
+            report_bytes = report_service.generate_pdf_report(contract_id=contract_id, include_clauses=include_clauses)
+            content_type = "application/pdf"
+            file_extension = "pdf"
 
         else:  # excel
             logger.info("Generating Excel report")
             report_bytes = report_service.generate_excel_report(contract_id=contract_id)
-            content_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-            file_extension = 'xlsx'
+            content_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            file_extension = "xlsx"
 
         # Generate filename
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        safe_contract_name = contract.contract_name.replace(' ', '_')[:50]
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_contract_name = contract.contract_name.replace(" ", "_")[:50]
         filename = f"{safe_contract_name}_{timestamp}.{file_extension}"
 
         logger.info(f"Report generated successfully: {filename} ({len(report_bytes)} bytes)")
@@ -104,25 +102,21 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             status_code=200,
             mimetype=content_type,
             headers={
-                'Content-Disposition': f'attachment; filename="{filename}"',
-                'Content-Length': str(len(report_bytes))
-            }
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Content-Length": str(len(report_bytes)),
+            },
         )
 
     except ContractNotFoundError as e:
         logger.error(f"Contract not found: {str(e)}")
-        return func.HttpResponse(
-            json.dumps({"error": str(e)}),
-            status_code=404,
-            mimetype="application/json"
-        )
+        return func.HttpResponse(json.dumps({"error": str(e)}), status_code=404, mimetype="application/json")
 
     except ReportGenerationError as e:
         logger.error(f"Report generation error: {str(e)}")
         return func.HttpResponse(
             json.dumps({"error": "Failed to generate report", "details": str(e)}),
             status_code=500,
-            mimetype="application/json"
+            mimetype="application/json",
         )
 
     except Exception as e:
@@ -130,5 +124,5 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         return func.HttpResponse(
             json.dumps({"error": "An unexpected error occurred", "details": str(e)}),
             status_code=500,
-            mimetype="application/json"
+            mimetype="application/json",
         )

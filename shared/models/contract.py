@@ -1,19 +1,22 @@
 """Contract data models."""
 
 from datetime import datetime
-from typing import Optional, Literal
-from pydantic import BaseModel, Field
 from enum import Enum
+from typing import List, Literal, Optional
+
+from pydantic import BaseModel, Field
 
 
 class ContractSource(str, Enum):
     """Source of contract data."""
+
     UPLOAD = "upload"
     MANUAL = "manual"
 
 
 class ContractStatus(str, Enum):
     """Processing status of contract."""
+
     UPLOADED = "uploaded"
     EXTRACTING_TEXT = "extracting_text"
     TEXT_EXTRACTED = "text_extracted"
@@ -31,6 +34,7 @@ class Contract(BaseModel):
     Cosmos DB Container: contracts
     Partition Key: contract_id
     """
+
     id: str = Field(..., description="Unique contract identifier (same as contract_id for Cosmos)")
     type: Literal["contract"] = "contract"
     contract_id: str = Field(..., description="Contract ID (partition key)")
@@ -45,6 +49,7 @@ class Contract(BaseModel):
     status: ContractStatus = Field(..., description="Current processing status")
     created_at: datetime = Field(default_factory=datetime.utcnow, description="Creation timestamp")
     updated_at: datetime = Field(default_factory=datetime.utcnow, description="Last update timestamp")
+    upload_date: Optional[datetime] = Field(None, description="Upload date (alias for created_at)")
     partition_key: str = Field(..., description="Cosmos DB partition key (same as contract_id)")
 
     # Storage references
@@ -52,11 +57,13 @@ class Contract(BaseModel):
     extracted_text_uri: Optional[str] = Field(None, description="URI for extracted text")
 
     # Processing metadata
+    clause_ids: Optional[List[str]] = Field(None, description="List of clause IDs in this contract")
     error_message: Optional[str] = Field(None, description="Error message if processing failed")
     processing_duration_seconds: Optional[float] = Field(None, description="Total processing time")
 
     class Config:
         """Pydantic configuration."""
+
         use_enum_values = True
         json_schema_extra = {
             "example": {
@@ -72,7 +79,7 @@ class Contract(BaseModel):
                 "end_date": "2025-12-31",
                 "contract_value_estimate": 1200000.0,
                 "status": "analyzed",
-                "partition_key": "contract_001"
+                "partition_key": "contract_001",
             }
         }
 

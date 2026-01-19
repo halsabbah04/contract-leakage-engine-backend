@@ -3,9 +3,10 @@
 Simple health check endpoint to verify API is running.
 """
 
-import azure.functions as func
 import json
 from datetime import datetime
+
+import azure.functions as func
 
 from shared.utils.config import get_settings
 from shared.utils.logging import setup_logging
@@ -34,24 +35,22 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             "runtime": settings.FUNCTIONS_WORKER_RUNTIME,
             "database": {
                 "cosmos_db": settings.COSMOS_DATABASE_NAME,
-                "connected": bool(settings.COSMOS_CONNECTION_STRING)
-            }
+                "connected": bool(settings.COSMOS_CONNECTION_STRING),
+            },
         }
 
-        return func.HttpResponse(
-            json.dumps(response_data),
-            status_code=200,
-            mimetype="application/json"
-        )
+        return func.HttpResponse(json.dumps(response_data), status_code=200, mimetype="application/json")
 
     except Exception as e:
         logger.error(f"Health check failed: {str(e)}")
         return func.HttpResponse(
-            json.dumps({
-                "status": "unhealthy",
-                "error": str(e),
-                "timestamp": datetime.utcnow().isoformat()
-            }),
+            json.dumps(
+                {
+                    "status": "unhealthy",
+                    "error": str(e),
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+            ),
             status_code=500,
-            mimetype="application/json"
+            mimetype="application/json",
         )

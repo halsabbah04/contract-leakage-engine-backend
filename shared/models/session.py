@@ -1,12 +1,14 @@
 """Analysis session data models."""
 
 from datetime import datetime
-from typing import Optional, List, Dict, Any, Literal
+from typing import Any, Dict, List, Literal, Optional
+
 from pydantic import BaseModel, Field
 
 
 class UserAction(str):
     """Types of user actions."""
+
     DISMISSED = "dismissed"
     ACCEPTED = "accepted"
     MODIFIED = "modified"
@@ -15,6 +17,7 @@ class UserAction(str):
 
 class FindingOverride(BaseModel):
     """User override for a specific finding."""
+
     finding_id: str = Field(..., description="ID of the finding being overridden")
     action: str = Field(..., description="Action taken (dismissed, accepted, modified)")
     reason: Optional[str] = Field(None, description="User's reason for the action")
@@ -30,6 +33,7 @@ class AnalysisSession(BaseModel):
     Cosmos DB Container: analysis_sessions
     Partition Key: contract_id
     """
+
     id: str = Field(..., description="Unique session identifier")
     type: Literal["session"] = "session"
     contract_id: str = Field(..., description="Contract being analyzed (partition key)")
@@ -57,6 +61,7 @@ class AnalysisSession(BaseModel):
 
     class Config:
         """Pydantic configuration."""
+
         json_schema_extra = {
             "example": {
                 "id": "session_001",
@@ -67,10 +72,10 @@ class AnalysisSession(BaseModel):
                     {
                         "finding_id": "finding_001",
                         "action": "dismissed",
-                        "reason": "Covered by side letter"
+                        "reason": "Covered by side letter",
                     }
                 ],
-                "partition_key": "contract_001"
+                "partition_key": "contract_001",
             }
         }
 
@@ -86,9 +91,11 @@ class AnalysisSession(BaseModel):
 
     def add_export(self, export_format: str, export_uri: Optional[str] = None) -> None:
         """Record an export action."""
-        self.exports.append({
-            "format": export_format,
-            "uri": export_uri,
-            "timestamp": datetime.utcnow().isoformat()
-        })
+        self.exports.append(
+            {
+                "format": export_format,
+                "uri": export_uri,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+        )
         self.last_activity_at = datetime.utcnow()
