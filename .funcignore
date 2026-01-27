@@ -5,6 +5,7 @@
 local.settings.json
 test
 .venv
+venv
 .env
 .python_packages
 reference docs/
@@ -15,5 +16,10 @@ __pycache__/
 .pytest_cache/
 .coverage
 htmlcov/
-reference docs/
 .claude/
+.mypy_cache/
+shared-types/
+test_contracts/
+
+# v1 function.json files not needed with v4 programming model
+**/function.json
