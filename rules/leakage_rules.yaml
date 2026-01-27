@@ -318,6 +318,215 @@ rules:
       parameters:
         risk_percentage: 0.25
 
+  # ============================================================================
+  # FLEXIBLE KEYWORD-ONLY RULES (No clause_type requirement)
+  # These rules work even when clause classification is imprecise
+  # ============================================================================
+
+  - rule_id: FLEX_FIXED_PRICE_NO_ADJUSTMENT
+    name: "Fixed Price Without Adjustment"
+    category: pricing
+    severity: high
+    enabled: true
+    description: "Fixed pricing detected without adjustment provisions"
+    conditions:
+      contains:
+        - "fixed price"
+        - "fixed fee"
+        - "price shall remain"
+      not_contains:
+        - adjustment
+        - escalation
+        - increase
+        - cpi
+        - inflation
+    explanation: |
+      Fixed pricing without any adjustment mechanism detected. This could lead to revenue
+      erosion over time as costs and market rates change.
+    business_impact: "Revenue erosion due to lack of price adjustments"
+    recommended_action: "Add annual price adjustment clause tied to CPI or fixed percentage"
+    impact_calculation:
+      method: "inflation_based"
+      parameters:
+        inflation_rate: 0.03
+
+  - rule_id: FLEX_AUTO_RENEWAL_DETECTED
+    name: "Auto-Renewal Clause Detected"
+    category: renewal
+    severity: medium
+    enabled: true
+    description: "Automatic renewal without clear price review mechanism"
+    conditions:
+      contains:
+        - "automatically renew"
+        - "auto-renew"
+        - "automatic renewal"
+        - "evergreen"
+      not_contains:
+        - price review
+        - renegotiate
+        - adjustment
+    explanation: |
+      Contract contains automatic renewal provisions without clear price review mechanisms.
+      This could lock in outdated pricing for extended periods.
+    business_impact: "Potential revenue loss on renewals"
+    recommended_action: "Add price review clause prior to each renewal period"
+    impact_calculation:
+      method: "renewal_based"
+      parameters:
+        expected_increase: 0.05
+        renewal_probability: 0.7
+
+  - rule_id: FLEX_TERMINATION_NO_NOTICE
+    name: "Termination Without Adequate Notice"
+    category: termination
+    severity: medium
+    enabled: true
+    description: "Termination clause without adequate notice provisions"
+    conditions:
+      contains:
+        - "terminate"
+        - "termination"
+        - "cancel"
+      not_contains:
+        - "30 days"
+        - "60 days"
+        - "90 days"
+        - notice period
+        - written notice
+    explanation: |
+      Termination provisions found without clear notice period requirements.
+      This could lead to abrupt contract termination without adequate preparation time.
+    business_impact: "Risk of sudden revenue loss, operational disruption"
+    recommended_action: "Specify minimum 60-day written notice requirement for termination"
+    impact_calculation:
+      method: "opportunity_cost"
+      parameters:
+        months_at_risk: 3
+
+  - rule_id: FLEX_PAYMENT_NO_PENALTY
+    name: "Payment Terms Without Late Penalty"
+    category: payment
+    severity: medium
+    enabled: true
+    description: "Payment provisions without late payment consequences"
+    conditions:
+      contains:
+        - "payment"
+        - "invoice"
+        - "pay within"
+        - "net 30"
+        - "net 60"
+      not_contains:
+        - late fee
+        - penalty
+        - interest
+        - overdue
+    explanation: |
+      Payment terms specified without consequences for late payment.
+      This removes financial incentive for timely payment.
+    business_impact: "Delayed cash flow, increased collection costs"
+    recommended_action: "Add late payment penalty (e.g., 1.5% monthly interest)"
+    impact_calculation:
+      method: "cash_flow_delay"
+      parameters:
+        average_delay_days: 30
+        interest_rate: 0.015
+
+  - rule_id: FLEX_LIABILITY_UNLIMITED
+    name: "Potential Unlimited Liability"
+    category: liability
+    severity: high
+    enabled: true
+    description: "Liability provisions without clear limitations"
+    conditions:
+      contains:
+        - "liable"
+        - "liability"
+        - "damages"
+        - "responsible for"
+      not_contains:
+        - "limited to"
+        - "not exceed"
+        - "cap"
+        - "maximum liability"
+        - "limitation of liability"
+    explanation: |
+      Liability language found without explicit cap or limitation.
+      This could expose the party to unbounded financial risk.
+    business_impact: "Unbounded financial exposure, insurance complications"
+    recommended_action: "Add liability cap (typically 12-24 months of contract fees)"
+    impact_calculation:
+      method: "risk_multiplier"
+      parameters:
+        multiplier: 2.0
+
+  - rule_id: FLEX_INDEMNIFICATION_ONE_SIDED
+    name: "One-Way Indemnification"
+    category: liability
+    severity: medium
+    enabled: true
+    description: "Indemnification appears one-sided"
+    conditions:
+      contains:
+        - "shall indemnify"
+        - "indemnify and hold harmless"
+        - "indemnification"
+      not_contains:
+        - "mutual"
+        - "each party shall indemnify"
+        - "reciprocal"
+    explanation: |
+      Indemnification provisions may be one-sided, creating asymmetric risk allocation.
+      One party bears defense and compensation obligations without reciprocal protection.
+    business_impact: "Unbalanced risk, potential legal costs"
+    recommended_action: "Negotiate mutual indemnification provisions"
+    impact_calculation:
+      method: "percentage_of_value"
+      parameters:
+        risk_percentage: 0.05
+
+  - rule_id: FLEX_FORCE_MAJEURE_MISSING
+    name: "Force Majeure May Be Missing"
+    category: termination
+    severity: low
+    enabled: true
+    description: "No force majeure provisions detected"
+    conditions:
+      not_contains:
+        - "force majeure"
+        - "act of god"
+        - "unforeseeable circumstances"
+        - "beyond control"
+    explanation: |
+      Contract appears to lack force majeure provisions. This could leave parties
+      obligated to perform even during extraordinary circumstances beyond their control.
+    business_impact: "Performance obligation during unforeseen events"
+    recommended_action: "Add force majeure clause covering pandemics, natural disasters, etc."
+    impact_calculation:
+      method: "none"
+
+  - rule_id: FLEX_WARRANTY_MISSING
+    name: "No Warranty Provisions Detected"
+    category: service_level
+    severity: low
+    enabled: true
+    description: "Warranty or guarantee provisions may be missing"
+    conditions:
+      not_contains:
+        - warranty
+        - warrant
+        - guarantee
+        - "fit for purpose"
+        - merchantability
+    explanation: |
+      No warranty provisions detected in the contract. This could mean no quality
+      assurances or recourse for defective deliverables.
+    business_impact: "No quality guarantees, no recourse for defects"
+    recommended_action: "Add appropriate warranty provisions for goods/services"
+    impact_calculation:
+      method: "none"
+
 # ============================================================================
 # Rule Engine Configuration
 # ============================================================================

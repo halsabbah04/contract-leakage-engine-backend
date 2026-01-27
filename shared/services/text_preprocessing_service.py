@@ -29,47 +29,63 @@ class TextPreprocessingService:
         """Initialize text preprocessing service."""
         logger.info("Text preprocessing service initialized")
 
-        # Common contract section patterns
+        # Common contract section patterns (case-insensitive where appropriate)
         self.section_patterns = [
-            r"^(\d+\.)+\s+",  # 1. 1.1. 1.1.1.
-            r"^[A-Z][a-z]*\s+\d+\.?\s+",  # Section 1.
-            r"^Article\s+\d+\.?\s+",  # Article 1.
-            r"^SECTION\s+\d+\.?\s+",  # SECTION 1.
+            r"^(\d+\.)+\s+",  # 1. 1.1. 1.1.1. (with trailing dot)
+            r"^\d+\.\d+\.?\s+",  # 1.1 or 1.1. (subsections like "1.1 Definitions")
+            r"^\d+\.\s+",  # 1. (single level like "1. Introduction")
+            r"^[Aa][Rr][Tt][Ii][Cc][Ll][Ee]\s+\d+",  # Article 1 or ARTICLE 1
+            r"^[Ss][Ee][Cc][Tt][Ii][Oo][Nn]\s+\d+",  # Section 1 or SECTION 1
+            r"^[Cc][Ll][Aa][Uu][Ss][Ee]\s+\d+",  # Clause 1 or CLAUSE 1
+            r"^[Pp][Aa][Rr][Tt]\s+\d+",  # Part 1 or PART 1
+            r"^[Ss][Cc][Hh][Ee][Dd][Uu][Ll][Ee]\s+[A-Za-z0-9]",  # Schedule A/1
+            r"^[Ee][Xx][Hh][Ii][Bb][Ii][Tt]\s+[A-Za-z0-9]",  # Exhibit A/1
+            r"^[Aa][Pp][Pp][Ee][Nn][Dd][Ii][Xx]\s+[A-Za-z0-9]",  # Appendix A/1
             r"^\([a-z]\)\s+",  # (a)
-            r"^\([0-9]+\)\s+",  # (1)
+            r"^\([ivxIVX]+\)\s+",  # (i), (ii), (iii), (iv), (v), (vi), (vii)
+            r"^\([0-9]+\)\s+",  # (1), (2), (3)
+            r"^[a-z]\)\s+",  # a), b), c)
+            r"^[ivxIVX]+\)\s+",  # i), ii), iii)
         ]
 
     def preprocess_text(self, raw_text: str) -> str:
         """
-        Clean and normalize text.
+        Clean and normalize text while preserving line structure.
 
         Args:
             raw_text: Raw extracted text
 
         Returns:
-            Cleaned text
+            Cleaned text with preserved line breaks for segmentation
         """
         logger.info("Preprocessing text...")
 
         text = raw_text
 
-        # Remove excessive whitespace
-        text = re.sub(r"\s+", " ", text)
+        # Remove form feeds and other control characters (but keep newlines)
+        text = re.sub(r"[\f\r\x0b\x0c]", "\n", text)
 
         # Remove page numbers (common patterns)
         text = re.sub(r"\n\s*Page\s+\d+\s+of\s+\d+\s*\n", "\n", text, flags=re.IGNORECASE)
-        text = re.sub(r"\n\s*\d+\s*\n", "\n", text)
-
-        # Remove header/footer artifacts
         text = re.sub(r"\n\s*-\s*\d+\s*-\s*\n", "\n", text)
 
-        # Normalize line breaks
+        # Normalize horizontal whitespace ONLY (preserve newlines for segmentation)
+        # Replace multiple spaces/tabs with single space, but keep newlines
+        text = re.sub(r"[^\S\n]+", " ", text)
+
+        # Normalize excessive line breaks (3+ newlines become 2)
         text = re.sub(r"\n{3,}", "\n\n", text)
 
-        # Remove leading/trailing whitespace
+        # Remove trailing whitespace from each line
+        lines = text.split("\n")
+        lines = [line.strip() for line in lines]
+        text = "\n".join(lines)
+
+        # Remove leading/trailing whitespace from entire text
         text = text.strip()
 
-        logger.info(f"Text preprocessed: {len(text)} characters")
+        line_count = len([l for l in text.split("\n") if l.strip()])
+        logger.info(f"Text preprocessed: {len(text)} characters, {line_count} non-empty lines")
         return text
 
     def segment_by_clauses(self, text: str) -> List[TextSegment]:
@@ -236,9 +252,23 @@ class TextPreprocessingService:
             if re.match(pattern, line):
                 return True
 
-        # Check for all-caps headers
-        if line.isupper() and len(line.split()) <= 5:
+        # Check for all-caps headers (common in legal documents)
+        # Allow up to 8 words to catch headers like "ARTICLE 1 - DEFINITIONS AND INTERPRETATION"
+        if line.isupper() and len(line.split()) <= 8:
             return True
+
+        # Check for title case headers starting with common legal terms
+        legal_header_starters = [
+            "Article", "Section", "Clause", "Part", "Schedule", "Exhibit",
+            "Appendix", "Annex", "Recitals", "Whereas", "Definitions",
+            "Interpretation", "General", "Miscellaneous", "Notices",
+            "Termination", "Confidentiality", "Liability", "Indemnification",
+            "Payment", "Term", "Renewal", "Insurance", "Compliance", "Audit",
+            "Governance", "Dispute", "Force Majeure", "Warranty", "Warranties",
+        ]
+        for starter in legal_header_starters:
+            if line.startswith(starter) and len(line) < 100:
+                return True
 
         return False
 

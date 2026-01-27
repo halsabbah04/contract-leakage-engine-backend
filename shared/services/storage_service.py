@@ -152,8 +152,14 @@ class StorageService:
         try:
             logger.info(f"Downloading blob: {blob_url}")
 
-            # Create blob client from URL
-            blob_client = BlobClient.from_blob_url(blob_url)
+            # Extract blob name from URL
+            # URL format: https://<account>.blob.core.windows.net/<container>/<blob_name>
+            blob_name = self._extract_blob_name_from_url(blob_url)
+
+            # Use authenticated blob service client
+            blob_client = self.blob_service_client.get_blob_client(
+                container=self.container_name, blob=blob_name
+            )
 
             # Download
             blob_data = blob_client.download_blob()
@@ -169,6 +175,32 @@ class StorageService:
         except Exception as e:
             logger.error(f"Failed to download blob: {str(e)}")
             raise StorageError(f"Failed to download blob: {str(e)}")
+
+    def _extract_blob_name_from_url(self, blob_url: str) -> str:
+        """
+        Extract blob name from a full blob URL.
+
+        Args:
+            blob_url: Full blob URL
+
+        Returns:
+            Blob name (path within container)
+        """
+        # URL format: https://<account>.blob.core.windows.net/<container>/<blob_name>
+        # We need to extract <blob_name> part
+        from urllib.parse import urlparse, unquote
+
+        parsed = urlparse(blob_url)
+        path = unquote(parsed.path)  # Decode URL-encoded characters
+
+        # Path starts with /<container>/<blob_name>
+        # Remove leading slash and container name
+        parts = path.lstrip("/").split("/", 1)
+        if len(parts) < 2:
+            raise StorageError(f"Invalid blob URL format: {blob_url}")
+
+        blob_name = parts[1]
+        return blob_name
 
     def download_blob_text(self, blob_url: str) -> str:
         """

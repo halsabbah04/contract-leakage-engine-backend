@@ -3,25 +3,40 @@
  */
 
 export enum ContractStatus {
-  PENDING = "pending",
-  PROCESSING = "processing",
+  UPLOADED = "uploaded",
+  EXTRACTING_TEXT = "extracting_text",
+  TEXT_EXTRACTED = "text_extracted",
+  EXTRACTING_CLAUSES = "extracting_clauses",
+  CLAUSES_EXTRACTED = "clauses_extracted",
+  ANALYZING = "analyzing",
   ANALYZED = "analyzed",
-  ERROR = "error"
+  FAILED = "failed"
 }
 
 export enum ClauseType {
   PRICING = "pricing",
+  PAYMENT = "payment",
   PAYMENT_TERMS = "payment_terms",
   RENEWAL = "renewal",
+  AUTO_RENEWAL = "auto_renewal",
   TERMINATION = "termination",
+  SERVICE_LEVEL = "service_level",
   LIABILITY = "liability",
   INDEMNIFICATION = "indemnification",
+  CONFIDENTIALITY = "confidentiality",
+  INTELLECTUAL_PROPERTY = "intellectual_property",
+  DISPUTE_RESOLUTION = "dispute_resolution",
+  FORCE_MAJEURE = "force_majeure",
   WARRANTY = "warranty",
+  DELIVERY = "delivery",
   SLA = "sla",
   PENALTY = "penalty",
+  PENALTIES = "penalties",
   DISCOUNT = "discount",
+  DISCOUNTS = "discounts",
   VOLUME_COMMITMENT = "volume_commitment",
   PRICE_ADJUSTMENT = "price_adjustment",
+  EXCLUSIVITY = "exclusivity",
   OTHER = "other"
 }
 

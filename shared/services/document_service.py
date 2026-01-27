@@ -96,7 +96,10 @@ class DocumentService:
 
             logger.info(f"Extracted text stored: {extracted_text_uri}")
 
-            # Step 4: Update contract status
+            # Step 4: Save extracted text URI to contract record
+            contract_repo.set_extracted_text_uri(contract_id, extracted_text_uri)
+
+            # Step 5: Update contract status
             contract_repo.update_status(contract_id, ContractStatus.TEXT_EXTRACTED)
 
             # Return processing results

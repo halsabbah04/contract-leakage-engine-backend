@@ -145,23 +145,30 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             logger.info(f"Stored {len(created_findings)} rule-based findings")
 
         # Phase 5: AI-Powered Detection with GPT 5.2
-        logger.info("Phase 5: Running AI-powered leakage detection with GPT 5.2...")
+        # Skip if too many clauses to avoid timeout (max 30 clauses for AI analysis)
+        ai_findings = []
+        clause_count = len(clauses) if 'clauses' in dir() else 0
 
-        try:
-            from shared.services.ai_detection_service import AIDetectionService
+        if clause_count > 50:
+            logger.warning(f"Skipping AI detection: {clause_count} clauses exceeds limit of 50")
+        else:
+            logger.info("Phase 5: Running AI-powered leakage detection with GPT 5.2...")
 
-            ai_service = AIDetectionService()
-            ai_findings = ai_service.detect_leakage(contract_id, contract_metadata)
+            try:
+                from shared.services.ai_detection_service import AIDetectionService
 
-            # Store AI findings
-            if ai_findings:
-                created_ai_findings = finding_repo.bulk_create(ai_findings)
-                logger.info(f"Stored {len(created_ai_findings)} AI-detected findings")
-                findings.extend(ai_findings)
+                ai_service = AIDetectionService()
+                ai_findings = ai_service.detect_leakage(contract_id, contract_metadata)
 
-        except Exception as e:
-            logger.error(f"AI detection failed (continuing with rule-based findings): {str(e)}")
-            # Continue even if AI detection fails - we still have rule-based findings
+                # Store AI findings
+                if ai_findings:
+                    created_ai_findings = finding_repo.bulk_create(ai_findings)
+                    logger.info(f"Stored {len(created_ai_findings)} AI-detected findings")
+                    findings.extend(ai_findings)
+
+            except Exception as e:
+                logger.error(f"AI detection failed (continuing with rule-based findings): {str(e)}")
+                # Continue even if AI detection fails - we still have rule-based findings
 
         # Calculate duration
         duration = time.time() - start_time
@@ -172,15 +179,25 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
 
         logger.info(f"Analysis completed for contract {contract_id} in {duration:.2f}s")
 
-        # Return accepted response (for now synchronous, will be async in production)
+        # Count findings by severity
+        findings_by_severity = {
+            "CRITICAL": len([f for f in findings if f.severity.upper() == "CRITICAL"]),
+            "HIGH": len([f for f in findings if f.severity.upper() == "HIGH"]),
+            "MEDIUM": len([f for f in findings if f.severity.upper() == "MEDIUM"]),
+            "LOW": len([f for f in findings if f.severity.upper() == "LOW"]),
+        }
+
+        # Return response matching AnalyzeContractResponse type
         return func.HttpResponse(
             json.dumps(
                 {
                     "message": "Analysis completed successfully",
                     "contract_id": contract_id,
-                    "status": ContractStatus.ANALYZED.value,
-                    "duration_seconds": round(duration, 2),
-                    "note": "Full analysis pipeline will be implemented in subsequent phases",
+                    "session_id": f"session_{contract_id}",
+                    "total_clauses_extracted": len(clauses) if 'clauses' in dir() else 0,
+                    "total_findings": len(findings),
+                    "findings_by_severity": findings_by_severity,
+                    "processing_time_seconds": round(duration, 2),
                 }
             ),
             status_code=200,

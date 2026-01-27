@@ -15,7 +15,7 @@ from shared.utils.exceptions import DatabaseError, FileSizeExceededError, FileUp
 from shared.utils.logging import setup_logging
 
 logger = setup_logging(__name__)
-settings = get_settings()
+settings = get_settings(validate=False)
 
 
 def main(req: func.HttpRequest) -> func.HttpResponse:

@@ -46,21 +46,38 @@ class RAGService:
         try:
             logger.info(f"Indexing contract {contract_id} for RAG")
 
-            # Step 1: Generate embeddings
-            logger.info("Step 1: Generating embeddings...")
-            embedded_count = self.embedding_service.embed_clauses_for_contract(contract_id, force_reembed=force_reindex)
-
-            # Step 2: Get clauses with embeddings
+            # Get clauses first to check if already indexed
             cosmos_client = get_cosmos_client()
             clause_repo = ClauseRepository(cosmos_client.clauses_container)
             clauses = clause_repo.get_by_contract_id(contract_id)
 
-            # Filter clauses with embeddings
+            if not clauses:
+                logger.warning(f"No clauses found for contract {contract_id}")
+                return {"total_clauses": 0, "embedded_count": 0, "indexed_count": 0}
+
+            # Check if all clauses already have embeddings (skip if so, unless force_reindex)
             clauses_with_embeddings = [c for c in clauses if c.embedding]
+            if not force_reindex and len(clauses_with_embeddings) == len(clauses):
+                logger.info(f"All {len(clauses)} clauses already have embeddings, skipping indexing")
+                return {
+                    "total_clauses": len(clauses),
+                    "embedded_count": 0,
+                    "indexed_count": 0,
+                    "skipped": True,
+                }
+
+            # Step 1: Generate embeddings for clauses that need them
+            logger.info("Step 1: Generating embeddings...")
+            embedded_count = self.embedding_service.embed_clauses_for_contract(contract_id, force_reembed=force_reindex)
+
+            # Re-fetch clauses with embeddings
+            if embedded_count > 0:
+                clauses = clause_repo.get_by_contract_id(contract_id)
+                clauses_with_embeddings = [c for c in clauses if c.embedding]
 
             logger.info(f"Found {len(clauses_with_embeddings)} clauses with embeddings")
 
-            # Step 3: Index in Azure AI Search
+            # Step 2: Index in Azure AI Search
             logger.info("Step 2: Indexing in Azure AI Search...")
             indexed_count = self.search_service.index_clauses_batch(clauses_with_embeddings)
 

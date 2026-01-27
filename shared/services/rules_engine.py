@@ -102,7 +102,7 @@ class RulesEngine:
             contract_metadata: Contract metadata
 
         Returns:
-            List of findings (if rule matches)
+            List of findings (if rule matches) - ONE finding per rule
         """
         rule_id = rule.get("rule_id")
         logger.debug(f"Executing rule: {rule_id}")
@@ -116,10 +116,12 @@ class RulesEngine:
         if matching_clauses:
             logger.info(f"Rule {rule_id} matched {len(matching_clauses)} clauses")
 
-            # Create finding for each match
-            for clause in matching_clauses:
-                finding = self._create_finding(rule, contract_id, clause, contract_metadata)
-                findings.append(finding)
+            # Create ONE finding per rule (aggregate all matching clauses)
+            # Use the first matching clause as the primary reference
+            finding = self._create_finding(
+                rule, contract_id, matching_clauses[0], contract_metadata, all_matching_clauses=matching_clauses
+            )
+            findings.append(finding)
 
         return findings
 
@@ -201,15 +203,23 @@ class RulesEngine:
 
         return True
 
-    def _create_finding(self, rule: Dict, contract_id: str, clause: Clause, contract_metadata: Dict) -> LeakageFinding:
+    def _create_finding(
+        self,
+        rule: Dict,
+        contract_id: str,
+        clause: Clause,
+        contract_metadata: Dict,
+        all_matching_clauses: Optional[List[Clause]] = None,
+    ) -> LeakageFinding:
         """
         Create a LeakageFinding from a matched rule.
 
         Args:
             rule: Rule definition
             contract_id: Contract identifier
-            clause: Matched clause
+            clause: Primary matched clause (for impact calculation reference)
             contract_metadata: Contract metadata
+            all_matching_clauses: All clauses that matched this rule
 
         Returns:
             LeakageFinding object
@@ -232,12 +242,18 @@ class RulesEngine:
         if rule.get("business_impact"):
             explanation += f"\n\nBusiness Impact: {rule.get('business_impact')}"
 
+        # Collect all matching clause IDs
+        if all_matching_clauses:
+            clause_ids = [c.id for c in all_matching_clauses]
+        else:
+            clause_ids = [clause.id]
+
         # Create finding
         finding = LeakageFinding(
             id=finding_id,
             contract_id=contract_id,
             partition_key=contract_id,
-            clause_ids=[clause.id],
+            clause_ids=clause_ids,
             leakage_category=category,
             risk_type=rule.get("rule_id", "unknown"),
             detection_method=DetectionMethod.RULE,
@@ -253,7 +269,7 @@ class RulesEngine:
             user_notes=None,
         )
 
-        logger.debug(f"Created finding: {finding_id} ({severity})")
+        logger.debug(f"Created finding: {finding_id} ({severity}) with {len(clause_ids)} clauses")
 
         return finding
 

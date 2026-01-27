@@ -17,7 +17,7 @@ def setup_logging(name: Optional[str] = None) -> logging.Logger:
     Returns:
         Configured logger instance
     """
-    settings = get_settings()
+    settings = get_settings(validate=False)
 
     logger = logging.getLogger(name or __name__)
 

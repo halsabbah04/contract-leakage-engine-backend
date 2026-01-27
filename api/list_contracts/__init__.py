@@ -63,22 +63,35 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
 
         logger.info(f"Found {len(contracts)} contracts")
 
-        # Build response
+        # Build response with all contract fields needed by frontend
         response_data = {
             "contracts": [
                 {
+                    "id": c.id,
+                    "type": c.type,
                     "contract_id": c.contract_id,
                     "contract_name": c.contract_name,
-                    "status": c.status,
-                    "source": c.source,
+                    "status": c.status.value if hasattr(c.status, "value") else c.status,
+                    "source": c.source.value if hasattr(c.source, "value") else c.source,
+                    "file_type": c.file_type,
+                    "language": c.language,
                     "counterparty": c.counterparty,
-                    "created_at": c.created_at.isoformat() if c.created_at else None,
+                    "start_date": c.start_date.isoformat() if c.start_date else None,
+                    "end_date": c.end_date.isoformat() if c.end_date else None,
                     "contract_value_estimate": c.contract_value_estimate,
+                    "created_at": c.created_at.isoformat() if c.created_at else None,
+                    "updated_at": c.updated_at.isoformat() if c.updated_at else None,
+                    "upload_date": c.upload_date.isoformat() if c.upload_date else None,
+                    "partition_key": c.partition_key,
+                    "blob_uri": c.blob_uri,
+                    "extracted_text_uri": c.extracted_text_uri,
+                    "clause_ids": c.clause_ids,
+                    "error_message": c.error_message,
+                    "processing_duration_seconds": c.processing_duration_seconds,
                 }
                 for c in contracts[:limit]
             ],
-            "total": len(contracts),
-            "filters": {"status": status_param, "limit": limit},
+            "total_count": len(contracts),
         }
 
         return func.HttpResponse(

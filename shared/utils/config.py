@@ -2,65 +2,73 @@
 
 import os
 from functools import lru_cache
+from typing import List
 
 
 class Settings:
-    """Application settings loaded from environment variables."""
+    """Application settings loaded from environment variables.
 
-    # Azure Functions
-    FUNCTIONS_WORKER_RUNTIME: str = os.getenv("FUNCTIONS_WORKER_RUNTIME", "python")
+    Environment variables are read at instance creation time to ensure
+    Azure Functions has loaded them from local.settings.json first.
+    """
 
-    # Cosmos DB
-    COSMOS_CONNECTION_STRING: str = os.getenv("CosmosDBConnectionString", "")
-    COSMOS_DATABASE_NAME: str = os.getenv("CosmosDBDatabaseName", "ContractLeakageDB")
-    COSMOS_CONTRACTS_CONTAINER: str = os.getenv("CosmosDBContractsContainer", "contracts")
-    COSMOS_CLAUSES_CONTAINER: str = os.getenv("CosmosDBClausesContainer", "clauses")
-    COSMOS_FINDINGS_CONTAINER: str = os.getenv("CosmosDBFindingsContainer", "leakage_findings")
-    COSMOS_SESSIONS_CONTAINER: str = os.getenv("CosmosDBSessionsContainer", "analysis_sessions")
-    COSMOS_OVERRIDES_CONTAINER: str = os.getenv("CosmosDBOverridesContainer", "user_overrides")
+    def __init__(self) -> None:
+        # Azure Functions
+        self.FUNCTIONS_WORKER_RUNTIME: str = os.getenv("FUNCTIONS_WORKER_RUNTIME", "python")
 
-    # Azure Blob Storage
-    STORAGE_CONNECTION_STRING: str = os.getenv("StorageConnectionString", "")
-    STORAGE_CONTAINER_NAME: str = os.getenv("StorageContainerName", "contracts")
+        # Cosmos DB
+        self.COSMOS_CONNECTION_STRING: str = os.getenv("CosmosDBConnectionString", "")
+        self.COSMOS_DATABASE_NAME: str = os.getenv("CosmosDBDatabaseName", "ContractLeakageDB")
+        self.COSMOS_CONTRACTS_CONTAINER: str = os.getenv("CosmosDBContractsContainer", "contracts")
+        self.COSMOS_CLAUSES_CONTAINER: str = os.getenv("CosmosDBClausesContainer", "clauses")
+        self.COSMOS_FINDINGS_CONTAINER: str = os.getenv("CosmosDBFindingsContainer", "leakage_findings")
+        self.COSMOS_SESSIONS_CONTAINER: str = os.getenv("CosmosDBSessionsContainer", "analysis_sessions")
+        self.COSMOS_OVERRIDES_CONTAINER: str = os.getenv("CosmosDBOverridesContainer", "user_overrides")
 
-    # Azure OpenAI
-    AZURE_OPENAI_API_KEY: str = os.getenv("OpenAIKey", "")
-    AZURE_OPENAI_ENDPOINT: str = os.getenv("OpenAIEndpoint", "")
-    AZURE_OPENAI_DEPLOYMENT_NAME: str = os.getenv("OpenAIDeploymentName", "gpt-52-deployment")
-    AZURE_OPENAI_EMBEDDING_DEPLOYMENT: str = os.getenv("OpenAIEmbeddingDeploymentName", "text-embedding-3-large")
-    AZURE_OPENAI_API_VERSION: str = os.getenv("OpenAIAPIVersion", "2024-08-01-preview")
-    AZURE_OPENAI_MAX_TOKENS: int = int(os.getenv("OpenAIMaxTokens", "4000"))
-    AZURE_OPENAI_TEMPERATURE: float = float(os.getenv("OpenAITemperature", "0.2"))
-    EMBEDDING_DIMENSIONS: int = int(os.getenv("EmbeddingDimensions", "3072"))
+        # Azure Blob Storage
+        self.STORAGE_CONNECTION_STRING: str = os.getenv("StorageConnectionString", "")
+        self.STORAGE_CONTAINER_NAME: str = os.getenv("StorageContainerName", "contracts")
 
-    # Azure AI Search
-    AZURE_SEARCH_ENDPOINT: str = os.getenv("SearchServiceEndpoint", "")
-    AZURE_SEARCH_API_KEY: str = os.getenv("SearchServiceKey", "")
-    AZURE_SEARCH_INDEX_NAME: str = os.getenv("SearchIndexName", "clauses-index")
-    AZURE_SEARCH_API_VERSION: str = os.getenv("SearchAPIVersion", "2023-11-01")
+        # Azure OpenAI
+        self.AZURE_OPENAI_API_KEY: str = os.getenv("OpenAIKey", "")
+        self.AZURE_OPENAI_ENDPOINT: str = os.getenv("OpenAIEndpoint", "")
+        self.AZURE_OPENAI_DEPLOYMENT_NAME: str = os.getenv("OpenAIDeploymentName", "gpt-52-deployment")
+        self.AZURE_OPENAI_EMBEDDING_DEPLOYMENT: str = os.getenv(
+            "OpenAIEmbeddingDeploymentName", "text-embedding-3-large"
+        )
+        self.AZURE_OPENAI_API_VERSION: str = os.getenv("OpenAIAPIVersion", "2024-08-01-preview")
+        self.AZURE_OPENAI_MAX_TOKENS: int = int(os.getenv("OpenAIMaxTokens", "4000"))
+        self.AZURE_OPENAI_TEMPERATURE: float = float(os.getenv("OpenAITemperature", "0.2"))
+        self.EMBEDDING_DIMENSIONS: int = int(os.getenv("EmbeddingDimensions", "3072"))
 
-    # Azure Document Intelligence
-    DOC_INTEL_ENDPOINT: str = os.getenv("DocumentIntelligenceEndpoint", "")
-    DOC_INTEL_KEY: str = os.getenv("DocumentIntelligenceKey", "")
-    DOC_INTEL_API_VERSION: str = os.getenv("DocumentIntelligenceAPIVersion", "2023-07-31")
+        # Azure AI Search
+        self.AZURE_SEARCH_ENDPOINT: str = os.getenv("SearchServiceEndpoint", "")
+        self.AZURE_SEARCH_API_KEY: str = os.getenv("SearchServiceKey", "")
+        self.AZURE_SEARCH_INDEX_NAME: str = os.getenv("SearchIndexName", "clauses-index")
+        self.AZURE_SEARCH_API_VERSION: str = os.getenv("SearchAPIVersion", "2023-11-01")
 
-    # Application Insights
-    APPINSIGHTS_CONNECTION_STRING: str = os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING", "")
+        # Azure Document Intelligence
+        self.DOC_INTEL_ENDPOINT: str = os.getenv("DocumentIntelligenceEndpoint", "")
+        self.DOC_INTEL_KEY: str = os.getenv("DocumentIntelligenceKey", "")
+        self.DOC_INTEL_API_VERSION: str = os.getenv("DocumentIntelligenceAPIVersion", "2023-07-31")
 
-    # Logging
-    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
-    ENABLE_DEBUG_LOGGING: bool = os.getenv("ENABLE_DEBUG_LOGGING", "false").lower() == "true"
+        # Application Insights
+        self.APPINSIGHTS_CONNECTION_STRING: str = os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING", "")
 
-    # File Upload Settings
-    MAX_UPLOAD_SIZE_MB: int = int(os.getenv("MAX_UPLOAD_SIZE_MB", "50"))
-    ALLOWED_FILE_EXTENSIONS: list = os.getenv("ALLOWED_FILE_EXTENSIONS", "pdf,docx,doc").split(",")
+        # Logging
+        self.LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
+        self.ENABLE_DEBUG_LOGGING: bool = os.getenv("ENABLE_DEBUG_LOGGING", "false").lower() == "true"
 
-    # Rules Engine
-    RULES_FILE_PATH: str = os.getenv("RULES_FILE_PATH", "rules/leakage_rules.yaml")
+        # File Upload Settings
+        self.MAX_UPLOAD_SIZE_MB: int = int(os.getenv("MAX_UPLOAD_SIZE_MB", "50"))
+        self.ALLOWED_FILE_EXTENSIONS: List[str] = os.getenv("ALLOWED_FILE_EXTENSIONS", "pdf,docx,doc,txt").split(",")
 
-    # Default Analysis Parameters
-    DEFAULT_INFLATION_RATE: float = float(os.getenv("DEFAULT_INFLATION_RATE", "0.03"))
-    DEFAULT_CONFIDENCE_THRESHOLD: float = float(os.getenv("DEFAULT_CONFIDENCE_THRESHOLD", "0.7"))
+        # Rules Engine
+        self.RULES_FILE_PATH: str = os.getenv("RULES_FILE_PATH", "rules/leakage_rules.yaml")
+
+        # Default Analysis Parameters
+        self.DEFAULT_INFLATION_RATE: float = float(os.getenv("DEFAULT_INFLATION_RATE", "0.03"))
+        self.DEFAULT_CONFIDENCE_THRESHOLD: float = float(os.getenv("DEFAULT_CONFIDENCE_THRESHOLD", "0.7"))
 
     @property
     def max_upload_size_bytes(self) -> int:
@@ -89,9 +97,29 @@ class Settings:
             )
 
 
-@lru_cache()
-def get_settings() -> Settings:
-    """Get cached settings instance."""
-    settings = Settings()
-    settings.validate()
-    return settings
+# Global settings instance - created lazily
+_settings: Settings | None = None
+
+
+def get_settings(validate: bool = True) -> Settings:
+    """Get settings instance.
+
+    Args:
+        validate: If True, validate required settings are present.
+                  Set to False for basic operations like logging setup.
+
+    Returns:
+        Settings instance with current environment variable values.
+    """
+    global _settings
+    if _settings is None:
+        _settings = Settings()
+    if validate:
+        _settings.validate()
+    return _settings
+
+
+def reset_settings() -> None:
+    """Reset cached settings. Useful for testing."""
+    global _settings
+    _settings = None

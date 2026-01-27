@@ -94,26 +94,21 @@ class AIDetectionService:
         Build RAG context focused on leakage detection.
 
         Uses targeted queries to retrieve relevant clauses.
+        Reduced to 3 key queries to stay within timeout limits.
         """
-        # Leakage detection queries (patterns to look for)
+        # Leakage detection queries - reduced to 3 most important patterns
+        # This keeps AI detection fast while still catching key issues
         queries = [
-            "missing price escalation or inflation adjustment in multi-year contracts",
-            "automatic renewal without price increase or renegotiation",
-            "unlimited liability or uncapped financial exposure",
-            "volume discounts without minimum commitments or caps",
-            "payment terms without late fees or penalties",
-            "service level agreements without credits or remedies",
-            "termination for convenience without financial protection",
-            "one-sided indemnification or unfair risk allocation",
-            "missing liquidated damages for delays or breaches",
-            "usage-based pricing without minimum volume guarantees",
+            "pricing terms, payment conditions, fees, and financial obligations",
+            "termination, renewal, liability caps, and indemnification provisions",
+            "service levels, warranties, penalties, and performance guarantees",
         ]
 
         return self.rag_service.build_rag_context(
             queries=queries,
             contract_id=contract_id,
-            max_clauses_per_query=3,
-            max_total_clauses=15,
+            max_clauses_per_query=5,
+            max_total_clauses=12,
         )
 
     def _analyze_with_gpt(

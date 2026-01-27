@@ -117,6 +117,27 @@ class ContractRepository(BaseRepository[Contract]):
         logger.info(f"Setting blob URI for contract {contract_id}")
         return self.update(contract)
 
+    def set_extracted_text_uri(self, contract_id: str, extracted_text_uri: str) -> Contract:
+        """
+        Set the extracted text URI for the contract.
+
+        Args:
+            contract_id: Contract identifier
+            extracted_text_uri: Azure Blob Storage URI for extracted text
+
+        Returns:
+            Updated contract
+        """
+        contract = self.get_by_contract_id(contract_id)
+        if not contract:
+            raise ValueError(f"Contract {contract_id} not found")
+
+        contract.extracted_text_uri = extracted_text_uri
+        contract.updated_at = datetime.utcnow()
+
+        logger.info(f"Setting extracted text URI for contract {contract_id}")
+        return self.update(contract)
+
     def set_processing_duration(self, contract_id: str, duration_seconds: float) -> Contract:
         """
         Set the total processing duration for the contract.
