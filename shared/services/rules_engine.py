@@ -320,6 +320,7 @@ class RulesEngine:
         parameters = impact_calc.get("parameters", {})
 
         contract_value = contract_metadata.get("contract_value", 0)
+        contract_currency = contract_metadata.get("contract_currency", "USD")
         duration_years = contract_metadata.get("duration_years", 1)
 
         # Default assumptions
@@ -331,7 +332,7 @@ class RulesEngine:
         )
 
         estimated_impact = EstimatedImpact(
-            currency="USD",
+            currency=contract_currency,
             value=0.0,
             value_min=None,
             value_max=None,

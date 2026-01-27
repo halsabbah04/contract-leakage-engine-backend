@@ -230,6 +230,12 @@ class NLPService:
         if currency:
             entities.currency = currency
 
+        # Extract monetary values that spaCy might miss (non-standard currencies like BHD)
+        additional_amounts = self._extract_monetary_values(doc.text)
+        for amount in additional_amounts:
+            if amount not in entities.amounts:
+                entities.amounts.append(amount)
+
         # Extract numerical rates
         rates = self._extract_rates(doc.text)
         entities.rates.extend(rates)
@@ -323,14 +329,26 @@ class NLPService:
         return summary
 
     def _parse_money(self, text: str) -> Optional[float]:
-        """Parse monetary amount from text."""
+        """Parse monetary amount from text, handling multipliers like million/billion."""
         try:
             # Remove currency symbols and commas
             cleaned = re.sub(r"[$£€¥,]", "", text)
+
+            # Check for multipliers (million, billion, thousand)
+            text_lower = cleaned.lower()
+            multiplier = 1.0
+            if "billion" in text_lower:
+                multiplier = 1_000_000_000
+            elif "million" in text_lower:
+                multiplier = 1_000_000
+            elif "thousand" in text_lower or " k" in text_lower:
+                multiplier = 1_000
+
             # Extract number
             match = re.search(r"\d+(?:\.\d+)?", cleaned)
             if match:
-                return float(match.group())
+                value = float(match.group()) * multiplier
+                return value
         except (ValueError, AttributeError, TypeError) as e:
             logger.debug(f"Failed to parse money from '{text}': {e}")
         return None
@@ -350,10 +368,15 @@ class NLPService:
         """Extract currency code from text."""
         # Common currency patterns
         currency_patterns = {
-            "USD": r"\$|USD|US\$|U\.S\.\$",
+            "USD": r"\$|USD|US\s*\$|U\.S\.\s*\$",
             "EUR": r"€|EUR",
             "GBP": r"£|GBP",
-            "BHD": r"BHD|BD",
+            "BHD": r"BHD|BD\s+\d",
+            "SAR": r"SAR",
+            "AED": r"AED",
+            "KWD": r"KWD",
+            "QAR": r"QAR",
+            "OMR": r"OMR",
         }
 
         for currency, pattern in currency_patterns.items():
@@ -361,6 +384,68 @@ class NLPService:
                 return currency
 
         return None
+
+    def _extract_monetary_values(self, text: str) -> List[float]:
+        """
+        Extract monetary values from text using regex patterns.
+        Catches values that spaCy might miss (non-standard currencies like BHD).
+
+        Args:
+            text: Text to search
+
+        Returns:
+            List of extracted monetary values
+        """
+        amounts = []
+
+        # Pattern for currency code followed by amount (e.g., "BHD 7,650,000")
+        # Supports: BHD, USD, EUR, GBP, SAR, AED, KWD, QAR, OMR
+        currency_amount_pattern = r"(?:BHD|USD|EUR|GBP|SAR|AED|KWD|QAR|OMR)\s*([\d,]+(?:\.\d+)?)\s*(?:million|billion|thousand|k)?"
+
+        matches = re.finditer(currency_amount_pattern, text, re.IGNORECASE)
+        for match in matches:
+            try:
+                # Parse the amount
+                amount_str = match.group(1).replace(",", "")
+                amount = float(amount_str)
+
+                # Check for multipliers
+                full_match = match.group(0).lower()
+                if "billion" in full_match:
+                    amount *= 1_000_000_000
+                elif "million" in full_match:
+                    amount *= 1_000_000
+                elif "thousand" in full_match or " k" in full_match:
+                    amount *= 1_000
+
+                if amount > 0:
+                    amounts.append(amount)
+            except (ValueError, AttributeError) as e:
+                logger.debug(f"Failed to parse monetary value from '{match.group(0)}': {e}")
+
+        # Also extract amounts with currency symbols: $1,000,000
+        symbol_amount_pattern = r"[$£€]\s*([\d,]+(?:\.\d+)?)\s*(?:million|billion|thousand|k)?"
+
+        matches = re.finditer(symbol_amount_pattern, text, re.IGNORECASE)
+        for match in matches:
+            try:
+                amount_str = match.group(1).replace(",", "")
+                amount = float(amount_str)
+
+                full_match = match.group(0).lower()
+                if "billion" in full_match:
+                    amount *= 1_000_000_000
+                elif "million" in full_match:
+                    amount *= 1_000_000
+                elif "thousand" in full_match or " k" in full_match:
+                    amount *= 1_000
+
+                if amount > 0 and amount not in amounts:
+                    amounts.append(amount)
+            except (ValueError, AttributeError) as e:
+                logger.debug(f"Failed to parse monetary value from '{match.group(0)}': {e}")
+
+        return amounts
 
     def _extract_rates(self, text: str) -> List[float]:
         """Extract numerical rates from text."""

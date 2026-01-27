@@ -103,16 +103,25 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                 summary["by_category"][cat] = 0
             summary["by_category"][cat] += 1
 
-        # Calculate total estimated impact
-        total_impact = sum(
-            f.estimated_impact.value
-            for f in findings
-            if f.estimated_impact and f.estimated_impact.value is not None
-        )
-        if total_impact > 0:
+        # Calculate total estimated impact and determine currency from findings
+        findings_with_impact = [
+            f for f in findings
+            if f.estimated_impact and f.estimated_impact.value is not None and f.estimated_impact.value > 0
+        ]
+
+        if findings_with_impact:
+            total_impact = sum(f.estimated_impact.value for f in findings_with_impact)
+            # Use currency from first finding with impact
+            currency = findings_with_impact[0].estimated_impact.currency or "USD"
             summary["total_estimated_impact"] = {
                 "amount": total_impact,
-                "currency": "BHD",  # Default to Bahraini Dinars
+                "currency": currency,
+            }
+        else:
+            # No financial impact calculated - don't include in summary
+            summary["total_estimated_impact"] = {
+                "amount": 0,
+                "currency": "USD",
             }
 
         # Apply pagination

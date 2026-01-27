@@ -9,15 +9,77 @@ Orchestrates the complete contract analysis pipeline:
 
 import json
 import time
+from typing import Dict, List, Optional, Tuple
 
 import azure.functions as func
 
 from shared.db import ContractRepository, get_cosmos_client
+from shared.models.clause import Clause
 from shared.models.contract import ContractStatus
 from shared.utils.exceptions import DatabaseError
 from shared.utils.logging import setup_logging
 
 logger = setup_logging(__name__)
+
+
+def extract_contract_value_from_clauses(clauses: List[Clause]) -> Tuple[Optional[float], Optional[str]]:
+    """
+    Extract estimated contract value and currency from monetary entities in clauses.
+
+    Looks for the largest monetary value mentioned in the contract,
+    which is typically the total contract value.
+
+    Args:
+        clauses: List of extracted clauses with entities
+
+    Returns:
+        Tuple of (contract_value, currency) - both None if no monetary values found
+    """
+    max_value: Optional[float] = None
+    extracted_currency: Optional[str] = None
+
+    for clause in clauses:
+        if clause.entities:
+            # Get amounts from entities (backend model uses 'amounts' list)
+            amounts = clause.entities.amounts if clause.entities.amounts else []
+            for amount in amounts:
+                if amount and (max_value is None or amount > max_value):
+                    max_value = amount
+                    # Use the currency from this clause's entities
+                    extracted_currency = clause.entities.currency or extracted_currency
+
+    if max_value is not None:
+        # Default to USD if no currency was found
+        final_currency = extracted_currency or "USD"
+        logger.info(f"Extracted contract value: {final_currency} {max_value:,.2f}")
+        return max_value, final_currency
+    else:
+        logger.info("No monetary values found in contract - financial impact will not be calculated")
+        return None, None
+
+
+def calculate_contract_duration_years(contract) -> int:
+    """
+    Calculate contract duration in years from start/end dates.
+
+    Args:
+        contract: Contract object with start_date and end_date
+
+    Returns:
+        Duration in years (default 3 if dates not available)
+    """
+    try:
+        if contract.start_date and contract.end_date:
+            from datetime import datetime
+
+            start = datetime.fromisoformat(contract.start_date.replace("Z", "+00:00"))
+            end = datetime.fromisoformat(contract.end_date.replace("Z", "+00:00"))
+            years = (end - start).days / 365.25
+            return max(1, int(years))
+    except Exception:
+        pass
+
+    return 3  # Default to 3 years
 
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
@@ -128,10 +190,25 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
 
         rules_engine = RulesEngine()
 
+        # Extract contract value and currency from clauses
+        extracted_value, extracted_currency = extract_contract_value_from_clauses(clauses)
+
+        # Use extracted value or fall back to contract estimate
+        contract_value = contract.contract_value_estimate or extracted_value
+        contract_currency = extracted_currency or "USD"
+        duration_years = calculate_contract_duration_years(contract)
+
+        if contract_value:
+            logger.info(f"Contract value for impact calculation: {contract_currency} {contract_value:,.2f}")
+        else:
+            logger.info("No contract value found - financial impact calculations will be skipped")
+        logger.info(f"Contract duration: {duration_years} years")
+
         # Prepare contract metadata for rules engine
         contract_metadata = {
-            "contract_value": contract.contract_value_estimate or 0,
-            "duration_years": 3,  # TODO: Calculate from start_date/end_date
+            "contract_value": contract_value or 0,  # Rules engine expects a number
+            "contract_currency": contract_currency,
+            "duration_years": duration_years,
         }
 
         # Run rules engine

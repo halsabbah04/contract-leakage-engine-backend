@@ -41,29 +41,32 @@ export enum ClauseType {
 }
 
 export enum Severity {
-  LOW = "LOW",
-  MEDIUM = "MEDIUM",
-  HIGH = "HIGH",
-  CRITICAL = "CRITICAL"
+  LOW = "low",
+  MEDIUM = "medium",
+  HIGH = "high",
+  CRITICAL = "critical",
+  INFO = "info"
 }
 
 export enum LeakageCategory {
   PRICING = "pricing",
-  PAYMENT = "payment",
   RENEWAL = "renewal",
   TERMINATION = "termination",
-  LIABILITY = "liability",
+  SERVICE_CREDIT = "service_credit",
+  VOLUME_DISCOUNT = "volume_discount",
+  PENALTY = "penalty",
+  AUTO_RENEWAL = "auto_renewal",
+  LIABILITY_CAP = "liability_cap",
+  PAYMENT_TERMS = "payment_terms",
+  DELIVERY = "delivery",
   COMPLIANCE = "compliance",
-  SLA = "sla",
-  DISCOUNTS = "discounts",
-  VOLUME = "volume",
   OTHER = "other"
 }
 
 export enum DetectionMethod {
-  RULE = "RULE",
-  AI = "AI",
-  HYBRID = "HYBRID"
+  RULE = "rule",
+  AI = "ai",
+  HYBRID = "hybrid"
 }
 
 export enum SessionStatus {
