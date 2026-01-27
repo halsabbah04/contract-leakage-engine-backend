@@ -3,6 +3,7 @@
 import logging
 import sys
 from typing import Optional
+
 from .config import get_settings
 
 
@@ -16,7 +17,7 @@ def setup_logging(name: Optional[str] = None) -> logging.Logger:
     Returns:
         Configured logger instance
     """
-    settings = get_settings()
+    settings = get_settings(validate=False)
 
     logger = logging.getLogger(name or __name__)
 
@@ -33,14 +34,11 @@ def setup_logging(name: Optional[str] = None) -> logging.Logger:
         # Formatter
         if settings.ENABLE_DEBUG_LOGGING:
             formatter = logging.Formatter(
-                '%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
-                datefmt='%Y-%m-%d %H:%M:%S'
+                "%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S",
             )
         else:
-            formatter = logging.Formatter(
-                '%(asctime)s - %(levelname)s - %(message)s',
-                datefmt='%Y-%m-%d %H:%M:%S'
-            )
+            formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
 
         console_handler.setFormatter(formatter)
         logger.addHandler(console_handler)

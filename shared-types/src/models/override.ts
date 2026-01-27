@@ -40,19 +40,6 @@ export interface FindingWithOverrides {
 }
 
 /**
- * Request to create a user override
- */
-export interface CreateOverrideRequest {
-  finding_id: string;
-  action: OverrideAction;
-  user_email: string;
-  previous_value?: string | Severity;
-  new_value?: string | Severity;
-  notes?: string;
-  reason?: string;
-}
-
-/**
  * Summary of user overrides for a contract
  */
 export interface OverrideSummary {

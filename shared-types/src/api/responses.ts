@@ -39,6 +39,12 @@ export interface AnalyzeContractResponse {
   processing_time_seconds: number;
 }
 
+// GET /api/list_contracts
+export interface ListContractsResponse {
+  contracts: Contract[];
+  total_count: number;
+}
+
 // GET /api/get_contract/:contract_id
 export interface GetContractResponse {
   contract: Contract;

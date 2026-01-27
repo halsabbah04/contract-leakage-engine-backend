@@ -1,17 +1,18 @@
 """Base repository for common Cosmos DB operations."""
 
-from typing import TypeVar, Generic, Optional, List, Dict, Any
-from abc import ABC, abstractmethod
+from abc import ABC
+from typing import Any, Dict, Generic, List, Optional, TypeVar
+
 from azure.cosmos import ContainerProxy
-from azure.cosmos.exceptions import CosmosResourceNotFoundError, CosmosHttpResponseError
+from azure.cosmos.exceptions import CosmosHttpResponseError, CosmosResourceNotFoundError
 from pydantic import BaseModel
 
+from ...utils.exceptions import ContractNotFoundError, DatabaseError
 from ...utils.logging import setup_logging
-from ...utils.exceptions import DatabaseError, ContractNotFoundError
 
 logger = setup_logging(__name__)
 
-T = TypeVar('T', bound=BaseModel)
+T = TypeVar("T", bound=BaseModel)
 
 
 class BaseRepository(Generic[T], ABC):
@@ -47,7 +48,7 @@ class BaseRepository(Generic[T], ABC):
         """
         try:
             # Convert Pydantic model to dict
-            item_dict = item.model_dump(mode='json', exclude_none=False)
+            item_dict = item.model_dump(mode="json", exclude_none=False)
 
             logger.info(f"Creating item in {self.container.id}: {item_dict.get('id')}")
 
@@ -81,10 +82,7 @@ class BaseRepository(Generic[T], ABC):
         try:
             logger.info(f"Reading item from {self.container.id}: {item_id}")
 
-            item_dict = self.container.read_item(
-                item=item_id,
-                partition_key=partition_key
-            )
+            item_dict = self.container.read_item(item=item_id, partition_key=partition_key)
 
             return self.model_class(**item_dict)
 
@@ -112,14 +110,11 @@ class BaseRepository(Generic[T], ABC):
             DatabaseError: If update fails
         """
         try:
-            item_dict = item.model_dump(mode='json', exclude_none=False)
+            item_dict = item.model_dump(mode="json", exclude_none=False)
 
             logger.info(f"Updating item in {self.container.id}: {item_dict.get('id')}")
 
-            updated_item = self.container.replace_item(
-                item=item_dict.get('id'),
-                body=item_dict
-            )
+            updated_item = self.container.replace_item(item=item_dict.get("id"), body=item_dict)
 
             return self.model_class(**updated_item)
 
@@ -150,10 +145,7 @@ class BaseRepository(Generic[T], ABC):
         try:
             logger.info(f"Deleting item from {self.container.id}: {item_id}")
 
-            self.container.delete_item(
-                item=item_id,
-                partition_key=partition_key
-            )
+            self.container.delete_item(item=item_id, partition_key=partition_key)
 
             return True
 
@@ -167,8 +159,12 @@ class BaseRepository(Generic[T], ABC):
             logger.error(f"Unexpected error deleting item: {str(e)}")
             raise DatabaseError(f"Unexpected error: {str(e)}")
 
-    def query(self, query: str, parameters: Optional[List[Dict[str, Any]]] = None,
-              partition_key: Optional[str] = None) -> List[T]:
+    def query(
+        self,
+        query: str,
+        parameters: Optional[List[Dict[str, Any]]] = None,
+        partition_key: Optional[str] = None,
+    ) -> List[T]:
         """
         Execute a SQL query against the container.
 
@@ -188,15 +184,15 @@ class BaseRepository(Generic[T], ABC):
             logger.debug(f"Query: {query}, Parameters: {parameters}")
 
             query_kwargs = {
-                'query': query,
-                'enable_cross_partition_query': partition_key is None
+                "query": query,
+                "enable_cross_partition_query": partition_key is None,
             }
 
             if parameters:
-                query_kwargs['parameters'] = parameters
+                query_kwargs["parameters"] = parameters
 
             if partition_key:
-                query_kwargs['partition_key'] = partition_key
+                query_kwargs["partition_key"] = partition_key
 
             items = list(self.container.query_items(**query_kwargs))
 
@@ -222,7 +218,7 @@ class BaseRepository(Generic[T], ABC):
         Raises:
             DatabaseError: If query fails
         """
-        query = f"SELECT * FROM c WHERE c.partition_key = @partition_key"
+        query = "SELECT * FROM c WHERE c.partition_key = @partition_key"
         parameters = [{"name": "@partition_key", "value": partition_key}]
 
         return self.query(query, parameters, partition_key=partition_key)

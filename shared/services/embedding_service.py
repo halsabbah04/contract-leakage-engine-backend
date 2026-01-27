@@ -1,14 +1,15 @@
 """Embedding service for generating vector embeddings using Azure OpenAI."""
 
 import time
-from typing import List, Optional
+from typing import List
+
 from openai import AzureOpenAI
 
+from ..db import ClauseRepository, get_cosmos_client
 from ..models.clause import Clause
-from ..db import get_cosmos_client, ClauseRepository
 from ..utils.config import get_settings
-from ..utils.logging import setup_logging
 from ..utils.exceptions import EmbeddingServiceError
+from ..utils.logging import setup_logging
 
 logger = setup_logging(__name__)
 settings = get_settings()
@@ -25,7 +26,7 @@ class EmbeddingService:
             self.client = AzureOpenAI(
                 api_key=settings.AZURE_OPENAI_API_KEY,
                 api_version=settings.AZURE_OPENAI_API_VERSION,
-                azure_endpoint=settings.AZURE_OPENAI_ENDPOINT
+                azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
             )
 
             self.embedding_model = settings.AZURE_OPENAI_EMBEDDING_DEPLOYMENT
@@ -64,7 +65,7 @@ class EmbeddingService:
             response = self.client.embeddings.create(
                 input=text,
                 model=self.embedding_model,
-                dimensions=self.embedding_dimensions
+                dimensions=self.embedding_dimensions,
             )
 
             embedding = response.data[0].embedding
@@ -77,11 +78,7 @@ class EmbeddingService:
             logger.error(f"Failed to generate embedding: {str(e)}")
             raise EmbeddingServiceError(f"Embedding generation failed: {str(e)}")
 
-    def generate_embeddings_batch(
-        self,
-        texts: List[str],
-        batch_size: int = 100
-    ) -> List[List[float]]:
+    def generate_embeddings_batch(self, texts: List[str], batch_size: int = 100) -> List[List[float]]:
         """
         Generate embeddings for multiple texts in batches.
 
@@ -101,7 +98,7 @@ class EmbeddingService:
             all_embeddings = []
 
             for i in range(0, len(texts), batch_size):
-                batch = texts[i:i + batch_size]
+                batch = texts[i : i + batch_size]
 
                 # Filter empty texts
                 batch = [t[:32000] if t else "" for t in batch]
@@ -110,7 +107,7 @@ class EmbeddingService:
                     response = self.client.embeddings.create(
                         input=batch,
                         model=self.embedding_model,
-                        dimensions=self.embedding_dimensions
+                        dimensions=self.embedding_dimensions,
                     )
 
                     batch_embeddings = [data.embedding for data in response.data]
@@ -162,11 +159,7 @@ class EmbeddingService:
             logger.error(f"Failed to embed clause {clause.id}: {str(e)}")
             raise EmbeddingServiceError(f"Clause embedding failed: {str(e)}")
 
-    def embed_clauses_for_contract(
-        self,
-        contract_id: str,
-        force_reembed: bool = False
-    ) -> int:
+    def embed_clauses_for_contract(self, contract_id: str, force_reembed: bool = False) -> int:
         """
         Generate embeddings for all clauses in a contract.
 
@@ -205,10 +198,7 @@ class EmbeddingService:
                 return 0
 
             # Prepare texts for batch embedding
-            texts = [
-                (c.normalized_summary or c.original_text)
-                for c in clauses_to_embed
-            ]
+            texts = [(c.normalized_summary or c.original_text) for c in clauses_to_embed]
 
             # Generate embeddings in batches
             embeddings = self.generate_embeddings_batch(texts, batch_size=100)
@@ -243,11 +233,7 @@ class EmbeddingService:
         """
         return self.generate_embedding(query)
 
-    def calculate_similarity(
-        self,
-        embedding1: List[float],
-        embedding2: List[float]
-    ) -> float:
+    def calculate_similarity(self, embedding1: List[float], embedding2: List[float]) -> float:
         """
         Calculate cosine similarity between two embeddings.
 

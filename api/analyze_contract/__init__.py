@@ -7,17 +7,79 @@ Orchestrates the complete contract analysis pipeline:
 4. Calculate impact
 """
 
-import azure.functions as func
 import json
 import time
-from datetime import datetime
+from typing import Dict, List, Optional, Tuple
 
+import azure.functions as func
+
+from shared.db import ContractRepository, get_cosmos_client
+from shared.models.clause import Clause
 from shared.models.contract import ContractStatus
-from shared.db import get_cosmos_client, ContractRepository
+from shared.utils.exceptions import DatabaseError
 from shared.utils.logging import setup_logging
-from shared.utils.exceptions import ContractNotFoundError, DatabaseError
 
 logger = setup_logging(__name__)
+
+
+def extract_contract_value_from_clauses(clauses: List[Clause]) -> Tuple[Optional[float], Optional[str]]:
+    """
+    Extract estimated contract value and currency from monetary entities in clauses.
+
+    Looks for the largest monetary value mentioned in the contract,
+    which is typically the total contract value.
+
+    Args:
+        clauses: List of extracted clauses with entities
+
+    Returns:
+        Tuple of (contract_value, currency) - both None if no monetary values found
+    """
+    max_value: Optional[float] = None
+    extracted_currency: Optional[str] = None
+
+    for clause in clauses:
+        if clause.entities:
+            # Get amounts from entities (backend model uses 'amounts' list)
+            amounts = clause.entities.amounts if clause.entities.amounts else []
+            for amount in amounts:
+                if amount and (max_value is None or amount > max_value):
+                    max_value = amount
+                    # Use the currency from this clause's entities
+                    extracted_currency = clause.entities.currency or extracted_currency
+
+    if max_value is not None:
+        # Default to USD if no currency was found
+        final_currency = extracted_currency or "USD"
+        logger.info(f"Extracted contract value: {final_currency} {max_value:,.2f}")
+        return max_value, final_currency
+    else:
+        logger.info("No monetary values found in contract - financial impact will not be calculated")
+        return None, None
+
+
+def calculate_contract_duration_years(contract) -> int:
+    """
+    Calculate contract duration in years from start/end dates.
+
+    Args:
+        contract: Contract object with start_date and end_date
+
+    Returns:
+        Duration in years (default 3 if dates not available)
+    """
+    try:
+        if contract.start_date and contract.end_date:
+            from datetime import datetime
+
+            start = datetime.fromisoformat(contract.start_date.replace("Z", "+00:00"))
+            end = datetime.fromisoformat(contract.end_date.replace("Z", "+00:00"))
+            years = (end - start).days / 365.25
+            return max(1, int(years))
+    except Exception:
+        pass
+
+    return 3  # Default to 3 years
 
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
@@ -42,14 +104,14 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
 
     try:
         # Get contract_id from route parameter
-        contract_id = req.route_params.get('contract_id')
+        contract_id = req.route_params.get("contract_id")
 
         if not contract_id:
             logger.warning("No contract_id provided")
             return func.HttpResponse(
                 json.dumps({"error": "contract_id is required"}),
                 status_code=400,
-                mimetype="application/json"
+                mimetype="application/json",
             )
 
         logger.info(f"Starting analysis for contract: {contract_id}")
@@ -65,24 +127,26 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             return func.HttpResponse(
                 json.dumps({"error": f"Contract '{contract_id}' not found"}),
                 status_code=404,
-                mimetype="application/json"
+                mimetype="application/json",
             )
 
         # Check if analysis already in progress
         if contract.status in [
             ContractStatus.EXTRACTING_TEXT,
             ContractStatus.EXTRACTING_CLAUSES,
-            ContractStatus.ANALYZING
+            ContractStatus.ANALYZING,
         ]:
             logger.warning(f"Analysis already in progress for contract {contract_id}")
             return func.HttpResponse(
-                json.dumps({
-                    "error": "Analysis already in progress",
-                    "contract_id": contract_id,
-                    "current_status": contract.status
-                }),
+                json.dumps(
+                    {
+                        "error": "Analysis already in progress",
+                        "contract_id": contract_id,
+                        "current_status": contract.status,
+                    }
+                ),
                 status_code=409,
-                mimetype="application/json"
+                mimetype="application/json",
             )
 
         # Record start time
@@ -92,8 +156,8 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         contract_repo.update_status(contract_id, ContractStatus.ANALYZING)
 
         # Import services
-        from shared.services.document_service import DocumentService
         from shared.services.clause_extraction_service import ClauseExtractionService
+        from shared.services.document_service import DocumentService
 
         # Phase 2: Text Extraction (if not already done)
         if contract.status == ContractStatus.UPLOADED:
@@ -121,15 +185,30 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         # Phase 4: Leakage Detection (Rules Engine)
         logger.info("Phase 4: Running rules-based leakage detection...")
 
-        from shared.services.rules_engine import RulesEngine
         from shared.db import FindingRepository
+        from shared.services.rules_engine import RulesEngine
 
         rules_engine = RulesEngine()
 
+        # Extract contract value and currency from clauses
+        extracted_value, extracted_currency = extract_contract_value_from_clauses(clauses)
+
+        # Use extracted value or fall back to contract estimate
+        contract_value = contract.contract_value_estimate or extracted_value
+        contract_currency = extracted_currency or "USD"
+        duration_years = calculate_contract_duration_years(contract)
+
+        if contract_value:
+            logger.info(f"Contract value for impact calculation: {contract_currency} {contract_value:,.2f}")
+        else:
+            logger.info("No contract value found - financial impact calculations will be skipped")
+        logger.info(f"Contract duration: {duration_years} years")
+
         # Prepare contract metadata for rules engine
         contract_metadata = {
-            'contract_value': contract.contract_value_estimate or 0,
-            'duration_years': 3,  # TODO: Calculate from start_date/end_date
+            "contract_value": contract_value or 0,  # Rules engine expects a number
+            "contract_currency": contract_currency,
+            "duration_years": duration_years,
         }
 
         # Run rules engine
@@ -143,23 +222,30 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             logger.info(f"Stored {len(created_findings)} rule-based findings")
 
         # Phase 5: AI-Powered Detection with GPT 5.2
-        logger.info("Phase 5: Running AI-powered leakage detection with GPT 5.2...")
+        # Skip if too many clauses to avoid timeout (max 30 clauses for AI analysis)
+        ai_findings = []
+        clause_count = len(clauses) if 'clauses' in dir() else 0
 
-        try:
-            from shared.services.ai_detection_service import AIDetectionService
+        if clause_count > 50:
+            logger.warning(f"Skipping AI detection: {clause_count} clauses exceeds limit of 50")
+        else:
+            logger.info("Phase 5: Running AI-powered leakage detection with GPT 5.2...")
 
-            ai_service = AIDetectionService()
-            ai_findings = ai_service.detect_leakage(contract_id, contract_metadata)
+            try:
+                from shared.services.ai_detection_service import AIDetectionService
 
-            # Store AI findings
-            if ai_findings:
-                created_ai_findings = finding_repo.bulk_create(ai_findings)
-                logger.info(f"Stored {len(created_ai_findings)} AI-detected findings")
-                findings.extend(ai_findings)
+                ai_service = AIDetectionService()
+                ai_findings = ai_service.detect_leakage(contract_id, contract_metadata)
 
-        except Exception as e:
-            logger.error(f"AI detection failed (continuing with rule-based findings): {str(e)}")
-            # Continue even if AI detection fails - we still have rule-based findings
+                # Store AI findings
+                if ai_findings:
+                    created_ai_findings = finding_repo.bulk_create(ai_findings)
+                    logger.info(f"Stored {len(created_ai_findings)} AI-detected findings")
+                    findings.extend(ai_findings)
+
+            except Exception as e:
+                logger.error(f"AI detection failed (continuing with rule-based findings): {str(e)}")
+                # Continue even if AI detection fails - we still have rule-based findings
 
         # Calculate duration
         duration = time.time() - start_time
@@ -170,17 +256,29 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
 
         logger.info(f"Analysis completed for contract {contract_id} in {duration:.2f}s")
 
-        # Return accepted response (for now synchronous, will be async in production)
+        # Count findings by severity
+        findings_by_severity = {
+            "CRITICAL": len([f for f in findings if f.severity.upper() == "CRITICAL"]),
+            "HIGH": len([f for f in findings if f.severity.upper() == "HIGH"]),
+            "MEDIUM": len([f for f in findings if f.severity.upper() == "MEDIUM"]),
+            "LOW": len([f for f in findings if f.severity.upper() == "LOW"]),
+        }
+
+        # Return response matching AnalyzeContractResponse type
         return func.HttpResponse(
-            json.dumps({
-                "message": "Analysis completed successfully",
-                "contract_id": contract_id,
-                "status": ContractStatus.ANALYZED.value,
-                "duration_seconds": round(duration, 2),
-                "note": "Full analysis pipeline will be implemented in subsequent phases"
-            }),
+            json.dumps(
+                {
+                    "message": "Analysis completed successfully",
+                    "contract_id": contract_id,
+                    "session_id": f"session_{contract_id}",
+                    "total_clauses_extracted": len(clauses) if 'clauses' in dir() else 0,
+                    "total_findings": len(findings),
+                    "findings_by_severity": findings_by_severity,
+                    "processing_time_seconds": round(duration, 2),
+                }
+            ),
             status_code=200,
-            mimetype="application/json"
+            mimetype="application/json",
         )
 
     except DatabaseError as e:
@@ -188,7 +286,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         return func.HttpResponse(
             json.dumps({"error": "Database error occurred", "details": str(e)}),
             status_code=500,
-            mimetype="application/json"
+            mimetype="application/json",
         )
 
     except Exception as e:
@@ -199,15 +297,15 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             cosmos_client = get_cosmos_client()
             contract_repo = ContractRepository(cosmos_client.contracts_container)
             contract_repo.update_status(
-                req.route_params.get('contract_id'),
+                req.route_params.get("contract_id"),
                 ContractStatus.FAILED,
-                error_message=str(e)
+                error_message=str(e),
             )
-        except:
-            pass  # Best effort
+        except (DatabaseError, Exception) as update_error:
+            logger.error(f"Failed to update contract status to failed: {update_error}")
 
         return func.HttpResponse(
             json.dumps({"error": "An unexpected error occurred", "details": str(e)}),
             status_code=500,
-            mimetype="application/json"
+            mimetype="application/json",
         )

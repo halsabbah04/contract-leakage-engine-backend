@@ -2,9 +2,9 @@
 
 from typing import List, Optional
 
-from .base_repository import BaseRepository
 from ...models.clause import Clause
 from ...utils.logging import setup_logging
+from .base_repository import BaseRepository
 
 logger = setup_logging(__name__)
 
@@ -61,7 +61,7 @@ class ClauseRepository(BaseRepository[Clause]):
         """
         parameters = [
             {"name": "@contract_id", "value": contract_id},
-            {"name": "@clause_type", "value": clause_type}
+            {"name": "@clause_type", "value": clause_type},
         ]
 
         logger.info(f"Getting {clause_type} clauses for contract {contract_id}")
@@ -86,7 +86,7 @@ class ClauseRepository(BaseRepository[Clause]):
         """
         parameters = [
             {"name": "@contract_id", "value": contract_id},
-            {"name": "@risk_signal", "value": risk_signal}
+            {"name": "@risk_signal", "value": risk_signal},
         ]
 
         logger.info(f"Getting clauses with risk signal '{risk_signal}' for contract {contract_id}")

@@ -1,23 +1,16 @@
 """AI-powered leakage detection service using Azure OpenAI GPT 5.2."""
 
 import json
-from typing import List, Dict, Optional, Any
+from typing import Any, Dict, List, Optional
+
 from openai import AzureOpenAI
 
-from .rag_service import RAGService
-from ..models.clause import Clause
-from ..models.finding import (
-    LeakageFinding,
-    LeakageCategory,
-    Severity,
-    DetectionMethod,
-    EstimatedImpact,
-    Assumptions
-)
-from ..db import get_cosmos_client, ClauseRepository
+from ..db import ClauseRepository, get_cosmos_client
+from ..models.finding import Assumptions, DetectionMethod, EstimatedImpact, LeakageCategory, LeakageFinding, Severity
 from ..utils.config import get_settings
-from ..utils.logging import setup_logging
 from ..utils.exceptions import AIDetectionError
+from ..utils.logging import setup_logging
+from .rag_service import RAGService
 
 logger = setup_logging(__name__)
 settings = get_settings()
@@ -34,7 +27,7 @@ class AIDetectionService:
             self.client = AzureOpenAI(
                 api_key=settings.AZURE_OPENAI_API_KEY,
                 api_version=settings.AZURE_OPENAI_API_VERSION,
-                azure_endpoint=settings.AZURE_OPENAI_ENDPOINT
+                azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
             )
 
             self.model_deployment = settings.AZURE_OPENAI_DEPLOYMENT_NAME
@@ -46,11 +39,7 @@ class AIDetectionService:
             logger.error(f"Failed to initialize AI detection service: {str(e)}")
             raise AIDetectionError(f"AI detection initialization failed: {str(e)}")
 
-    def detect_leakage(
-        self,
-        contract_id: str,
-        contract_metadata: Optional[Dict] = None
-    ) -> List[LeakageFinding]:
+    def detect_leakage(self, contract_id: str, contract_metadata: Optional[Dict] = None) -> List[LeakageFinding]:
         """
         Detect commercial leakage using AI-powered analysis with RAG.
 
@@ -80,7 +69,7 @@ class AIDetectionService:
             logger.info("Step 2: Building RAG context...")
             rag_context = self._build_leakage_detection_context(contract_id)
 
-            if not rag_context['retrieved_clauses']:
+            if not rag_context["retrieved_clauses"]:
                 logger.warning("No clauses retrieved for AI analysis")
                 return []
 
@@ -89,7 +78,7 @@ class AIDetectionService:
             ai_findings = self._analyze_with_gpt(
                 contract_id=contract_id,
                 rag_context=rag_context,
-                contract_metadata=contract_metadata
+                contract_metadata=contract_metadata,
             )
 
             logger.info(f"AI detection complete: {len(ai_findings)} findings")
@@ -105,33 +94,25 @@ class AIDetectionService:
         Build RAG context focused on leakage detection.
 
         Uses targeted queries to retrieve relevant clauses.
+        Reduced to 3 key queries to stay within timeout limits.
         """
-        # Leakage detection queries (patterns to look for)
+        # Leakage detection queries - reduced to 3 most important patterns
+        # This keeps AI detection fast while still catching key issues
         queries = [
-            "missing price escalation or inflation adjustment in multi-year contracts",
-            "automatic renewal without price increase or renegotiation",
-            "unlimited liability or uncapped financial exposure",
-            "volume discounts without minimum commitments or caps",
-            "payment terms without late fees or penalties",
-            "service level agreements without credits or remedies",
-            "termination for convenience without financial protection",
-            "one-sided indemnification or unfair risk allocation",
-            "missing liquidated damages for delays or breaches",
-            "usage-based pricing without minimum volume guarantees"
+            "pricing terms, payment conditions, fees, and financial obligations",
+            "termination, renewal, liability caps, and indemnification provisions",
+            "service levels, warranties, penalties, and performance guarantees",
         ]
 
         return self.rag_service.build_rag_context(
             queries=queries,
             contract_id=contract_id,
-            max_clauses_per_query=3,
-            max_total_clauses=15
+            max_clauses_per_query=5,
+            max_total_clauses=12,
         )
 
     def _analyze_with_gpt(
-        self,
-        contract_id: str,
-        rag_context: Dict[str, Any],
-        contract_metadata: Dict
+        self, contract_id: str, rag_context: Dict[str, Any], contract_metadata: Dict
     ) -> List[LeakageFinding]:
         """
         Analyze contract using GPT 5.2 with RAG context.
@@ -144,7 +125,7 @@ class AIDetectionService:
             user_prompt = self._build_user_prompt(
                 contract_id=contract_id,
                 rag_context=rag_context,
-                contract_metadata=contract_metadata
+                contract_metadata=contract_metadata,
             )
 
             # Call GPT 5.2
@@ -154,11 +135,11 @@ class AIDetectionService:
                 model=self.model_deployment,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
+                    {"role": "user", "content": user_prompt},
                 ],
                 temperature=0.2,  # Low temperature for consistent, focused analysis
                 max_tokens=4000,
-                response_format={"type": "json_object"}
+                response_format={"type": "json_object"},
             )
 
             # Parse response
@@ -169,7 +150,7 @@ class AIDetectionService:
             findings = self._parse_ai_findings(
                 contract_id=contract_id,
                 analysis_result=analysis_result,
-                contract_metadata=contract_metadata
+                contract_metadata=contract_metadata,
             )
 
             logger.info(f"GPT 5.2 identified {len(findings)} leakage issues")
@@ -187,7 +168,8 @@ class AIDetectionService:
         """Build system prompt for GPT 5.2."""
         return """You are an expert contract analyst specializing in commercial leakage detection.
 
-Your role is to identify potential revenue leakage, unfavorable terms, and financial risks in business contracts that may not be caught by simple rule-based systems.
+Your role is to identify potential revenue leakage, unfavorable terms, and financial risks in business
+contracts that may not be caught by simple rule-based systems.
 
 Focus on:
 1. **Implicit risks** - Issues not explicitly stated but implied by clause combinations
@@ -230,12 +212,7 @@ Return a JSON object with this structure:
   ]
 }"""
 
-    def _build_user_prompt(
-        self,
-        contract_id: str,
-        rag_context: Dict[str, Any],
-        contract_metadata: Dict
-    ) -> str:
+    def _build_user_prompt(self, contract_id: str, rag_context: Dict[str, Any], contract_metadata: Dict) -> str:
         """Build user prompt with RAG context."""
 
         # Format contract metadata
@@ -248,7 +225,7 @@ Return a JSON object with this structure:
 """
 
         # Format retrieved clauses
-        clauses_text = rag_context['context_summary']
+        clauses_text = rag_context["context_summary"]
 
         prompt = f"""Analyze the following contract for commercial leakage and financial risks.
 
@@ -269,33 +246,36 @@ Provide your analysis in the specified JSON format. Include only genuine issues 
         return prompt
 
     def _parse_ai_findings(
-        self,
-        contract_id: str,
-        analysis_result: Dict,
-        contract_metadata: Dict
+        self, contract_id: str, analysis_result: Dict, contract_metadata: Dict
     ) -> List[LeakageFinding]:
         """Parse GPT response into LeakageFinding objects."""
         findings = []
 
-        for item in analysis_result.get('findings', []):
+        for item in analysis_result.get("findings", []):
             try:
                 # Map category
-                category = self._map_category(item.get('category', 'other'))
+                category = self._map_category(item.get("category", "other"))
 
                 # Map severity
-                severity = self._map_severity(item.get('severity', 'medium'))
+                severity = self._map_severity(item.get("severity", "medium"))
 
                 # Build estimated impact
                 estimated_impact = EstimatedImpact(
-                    value=item.get('estimated_impact_value', 0.0),
-                    currency=item.get('estimated_impact_currency', 'USD'),
-                    calculation_method=item.get('impact_calculation_method', 'ai_estimated'),
-                    confidence=item.get('confidence', 0.5)
+                    value=item.get("estimated_impact_value", 0.0),
+                    currency=item.get("estimated_impact_currency", "USD"),
+                    value_min=None,
+                    value_max=None,
+                    calculation_method=item.get("impact_calculation_method", "ai_estimated"),
+                    confidence=item.get("confidence", 0.5),
                 )
 
                 # Build assumptions
                 assumptions = Assumptions(
-                    custom_parameters=item.get('assumptions', {})
+                    inflation_rate=None,
+                    remaining_years=None,
+                    annual_volume=None,
+                    probability=None,
+                    custom_parameters=item.get("assumptions", {}),
                 )
 
                 # Create finding
@@ -303,18 +283,20 @@ Provide your analysis in the specified JSON format. Include only genuine issues 
                     id=f"ai_{contract_id}_{item.get('finding_id', 'unknown')}",
                     contract_id=contract_id,
                     partition_key=contract_id,
-                    clause_ids=item.get('affected_clause_ids', []),
+                    clause_ids=item.get("affected_clause_ids", []),
                     leakage_category=category,
-                    risk_type=item.get('title', 'AI-detected risk'),
+                    risk_type=item.get("title", "AI-detected risk"),
                     detection_method=DetectionMethod.AI,
                     rule_id=None,
                     severity=severity,
-                    confidence=item.get('confidence', 0.7),
-                    explanation=item.get('explanation', ''),
-                    business_impact_summary=item.get('business_impact', ''),
-                    recommended_action=item.get('recommended_action', ''),
+                    confidence=item.get("confidence", 0.7),
+                    explanation=item.get("explanation", ""),
+                    business_impact_summary=item.get("business_impact", ""),
+                    recommended_action=item.get("recommended_action", ""),
                     assumptions=assumptions,
-                    estimated_impact=estimated_impact
+                    estimated_impact=estimated_impact,
+                    embedding=None,
+                    user_notes=None,
                 )
 
                 findings.append(finding)
@@ -328,32 +310,27 @@ Provide your analysis in the specified JSON format. Include only genuine issues 
     def _map_category(self, category_str: str) -> LeakageCategory:
         """Map category string to enum."""
         mapping = {
-            'pricing': LeakageCategory.PRICING,
-            'payment': LeakageCategory.PAYMENT_TERMS,
-            'renewal': LeakageCategory.RENEWAL,
-            'termination': LeakageCategory.TERMINATION,
-            'service_level': LeakageCategory.SERVICE_CREDIT,
-            'liability': LeakageCategory.LIABILITY_CAP,
-            'penalty': LeakageCategory.PENALTY,
+            "pricing": LeakageCategory.PRICING,
+            "payment": LeakageCategory.PAYMENT_TERMS,
+            "renewal": LeakageCategory.RENEWAL,
+            "termination": LeakageCategory.TERMINATION,
+            "service_level": LeakageCategory.SERVICE_CREDIT,
+            "liability": LeakageCategory.LIABILITY_CAP,
+            "penalty": LeakageCategory.PENALTY,
         }
         return mapping.get(category_str.lower(), LeakageCategory.OTHER)
 
     def _map_severity(self, severity_str: str) -> Severity:
         """Map severity string to enum."""
         mapping = {
-            'critical': Severity.CRITICAL,
-            'high': Severity.HIGH,
-            'medium': Severity.MEDIUM,
-            'low': Severity.LOW,
+            "critical": Severity.CRITICAL,
+            "high": Severity.HIGH,
+            "medium": Severity.MEDIUM,
+            "low": Severity.LOW,
         }
         return mapping.get(severity_str.lower(), Severity.MEDIUM)
 
-    def analyze_specific_clauses(
-        self,
-        contract_id: str,
-        clause_ids: List[str],
-        analysis_focus: str
-    ) -> Dict[str, Any]:
+    def analyze_specific_clauses(self, contract_id: str, clause_ids: List[str], analysis_focus: str) -> Dict[str, Any]:
         """
         Analyze specific clauses with a particular focus.
 
@@ -387,10 +364,9 @@ Provide your analysis in the specified JSON format. Include only genuine issues 
                 return {"analysis": "No clauses found", "findings": []}
 
             # Build context
-            clauses_text = "\n\n".join([
-                f"[{c.clause_type}] {c.normalized_summary or c.original_text[:500]}"
-                for c in clauses
-            ])
+            clauses_text = "\n\n".join(
+                [f"[{c.clause_type}] {c.normalized_summary or c.original_text[:500]}" for c in clauses]
+            )
 
             # Build prompt
             prompt = f"""Analyze these specific contract clauses with focus on: {analysis_focus}
@@ -405,11 +381,11 @@ Provide detailed analysis in JSON format with findings array."""
                 model=self.model_deployment,
                 messages=[
                     {"role": "system", "content": self._build_system_prompt()},
-                    {"role": "user", "content": prompt}
+                    {"role": "user", "content": prompt},
                 ],
                 temperature=0.2,
                 max_tokens=2000,
-                response_format={"type": "json_object"}
+                response_format={"type": "json_object"},
             )
 
             result = json.loads(response.choices[0].message.content)

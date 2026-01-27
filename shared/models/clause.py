@@ -1,12 +1,14 @@
 """Clause data models."""
 
 from datetime import datetime
-from typing import Optional, List, Dict, Any, Literal
+from typing import List, Literal, Optional
+
 from pydantic import BaseModel, Field
 
 
 class ClauseType(str):
     """Common clause types found in contracts."""
+
     PRICING = "pricing"
     PAYMENT = "payment"
     TERMINATION = "termination"
@@ -30,6 +32,7 @@ class ClauseType(str):
 
 class ExtractedEntities(BaseModel):
     """Entities extracted from clause text."""
+
     currency: Optional[str] = Field(None, description="Currency mentioned (USD, EUR, etc.)")
     rates: List[float] = Field(default_factory=list, description="Numerical rates or prices")
     dates: List[str] = Field(default_factory=list, description="Dates mentioned (ISO format)")
@@ -48,6 +51,7 @@ class Clause(BaseModel):
 
     This is the PRIMARY RAG SURFACE for AI reasoning.
     """
+
     id: str = Field(..., description="Unique clause identifier")
     type: Literal["clause"] = "clause"
     contract_id: str = Field(..., description="Parent contract ID (partition key)")
@@ -65,7 +69,9 @@ class Clause(BaseModel):
     end_position: Optional[int] = Field(None, description="Character end position in full text")
 
     # Extracted structured data
-    entities: ExtractedEntities = Field(default_factory=ExtractedEntities, description="Extracted entities")
+    entities: ExtractedEntities = Field(
+        default_factory=lambda: ExtractedEntities(currency=None), description="Extracted entities"
+    )
 
     # Risk signals for rule-based detection
     risk_signals: List[str] = Field(default_factory=list, description="Identified risk patterns")
@@ -80,6 +86,7 @@ class Clause(BaseModel):
 
     class Config:
         """Pydantic configuration."""
+
         json_schema_extra = {
             "example": {
                 "id": "clause_001",
@@ -89,13 +96,9 @@ class Clause(BaseModel):
                 "clause_subtype": "price_adjustment",
                 "original_text": "Prices shall remain fixed for the duration of the agreement...",
                 "normalized_summary": "Pricing is fixed with no escalation mechanism.",
-                "entities": {
-                    "currency": "USD",
-                    "rates": [],
-                    "dates": []
-                },
+                "entities": {"currency": "USD", "rates": [], "dates": []},
                 "risk_signals": ["no_price_escalation"],
-                "partition_key": "contract_001"
+                "partition_key": "contract_001",
             }
         }
 

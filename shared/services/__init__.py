@@ -1,17 +1,17 @@
 """Business logic services for the Contract Leakage Engine."""
 
-from .storage_service import StorageService
-from .ocr_service import OCRService
-from .document_service import DocumentService
-from .text_preprocessing_service import TextPreprocessingService, TextSegment
-from .nlp_service import NLPService
-from .clause_extraction_service import ClauseExtractionService
-from .rules_engine import RulesEngine
-from .embedding_service import EmbeddingService
-from .search_service import SearchService
-from .rag_service import RAGService
 from .ai_detection_service import AIDetectionService
+from .clause_extraction_service import ClauseExtractionService
+from .document_service import DocumentService
+from .embedding_service import EmbeddingService
+from .nlp_service import NLPService
+from .ocr_service import OCRService
+from .rag_service import RAGService
 from .report_service import ReportService
+from .rules_engine import RulesEngine
+from .search_service import SearchService
+from .storage_service import StorageService
+from .text_preprocessing_service import TextPreprocessingService, TextSegment
 
 __all__ = [
     "StorageService",

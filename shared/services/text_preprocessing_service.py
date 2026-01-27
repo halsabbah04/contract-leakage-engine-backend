@@ -1,8 +1,8 @@
 """Text preprocessing and segmentation service."""
 
 import re
-from typing import List, Dict, Optional
 from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 from ..utils.logging import setup_logging
 
@@ -12,6 +12,7 @@ logger = setup_logging(__name__)
 @dataclass
 class TextSegment:
     """Represents a segment of text (clause, section, paragraph)."""
+
     text: str
     segment_type: str  # 'section', 'clause', 'paragraph'
     section_number: Optional[str] = None
@@ -28,47 +29,63 @@ class TextPreprocessingService:
         """Initialize text preprocessing service."""
         logger.info("Text preprocessing service initialized")
 
-        # Common contract section patterns
+        # Common contract section patterns (case-insensitive where appropriate)
         self.section_patterns = [
-            r'^(\d+\.)+\s+',  # 1. 1.1. 1.1.1.
-            r'^[A-Z][a-z]*\s+\d+\.?\s+',  # Section 1.
-            r'^Article\s+\d+\.?\s+',  # Article 1.
-            r'^SECTION\s+\d+\.?\s+',  # SECTION 1.
-            r'^\([a-z]\)\s+',  # (a)
-            r'^\([0-9]+\)\s+',  # (1)
+            r"^(\d+\.)+\s+",  # 1. 1.1. 1.1.1. (with trailing dot)
+            r"^\d+\.\d+\.?\s+",  # 1.1 or 1.1. (subsections like "1.1 Definitions")
+            r"^\d+\.\s+",  # 1. (single level like "1. Introduction")
+            r"^[Aa][Rr][Tt][Ii][Cc][Ll][Ee]\s+\d+",  # Article 1 or ARTICLE 1
+            r"^[Ss][Ee][Cc][Tt][Ii][Oo][Nn]\s+\d+",  # Section 1 or SECTION 1
+            r"^[Cc][Ll][Aa][Uu][Ss][Ee]\s+\d+",  # Clause 1 or CLAUSE 1
+            r"^[Pp][Aa][Rr][Tt]\s+\d+",  # Part 1 or PART 1
+            r"^[Ss][Cc][Hh][Ee][Dd][Uu][Ll][Ee]\s+[A-Za-z0-9]",  # Schedule A/1
+            r"^[Ee][Xx][Hh][Ii][Bb][Ii][Tt]\s+[A-Za-z0-9]",  # Exhibit A/1
+            r"^[Aa][Pp][Pp][Ee][Nn][Dd][Ii][Xx]\s+[A-Za-z0-9]",  # Appendix A/1
+            r"^\([a-z]\)\s+",  # (a)
+            r"^\([ivxIVX]+\)\s+",  # (i), (ii), (iii), (iv), (v), (vi), (vii)
+            r"^\([0-9]+\)\s+",  # (1), (2), (3)
+            r"^[a-z]\)\s+",  # a), b), c)
+            r"^[ivxIVX]+\)\s+",  # i), ii), iii)
         ]
 
     def preprocess_text(self, raw_text: str) -> str:
         """
-        Clean and normalize text.
+        Clean and normalize text while preserving line structure.
 
         Args:
             raw_text: Raw extracted text
 
         Returns:
-            Cleaned text
+            Cleaned text with preserved line breaks for segmentation
         """
         logger.info("Preprocessing text...")
 
         text = raw_text
 
-        # Remove excessive whitespace
-        text = re.sub(r'\s+', ' ', text)
+        # Remove form feeds and other control characters (but keep newlines)
+        text = re.sub(r"[\f\r\x0b\x0c]", "\n", text)
 
         # Remove page numbers (common patterns)
-        text = re.sub(r'\n\s*Page\s+\d+\s+of\s+\d+\s*\n', '\n', text, flags=re.IGNORECASE)
-        text = re.sub(r'\n\s*\d+\s*\n', '\n', text)
+        text = re.sub(r"\n\s*Page\s+\d+\s+of\s+\d+\s*\n", "\n", text, flags=re.IGNORECASE)
+        text = re.sub(r"\n\s*-\s*\d+\s*-\s*\n", "\n", text)
 
-        # Remove header/footer artifacts
-        text = re.sub(r'\n\s*-\s*\d+\s*-\s*\n', '\n', text)
+        # Normalize horizontal whitespace ONLY (preserve newlines for segmentation)
+        # Replace multiple spaces/tabs with single space, but keep newlines
+        text = re.sub(r"[^\S\n]+", " ", text)
 
-        # Normalize line breaks
-        text = re.sub(r'\n{3,}', '\n\n', text)
+        # Normalize excessive line breaks (3+ newlines become 2)
+        text = re.sub(r"\n{3,}", "\n\n", text)
 
-        # Remove leading/trailing whitespace
+        # Remove trailing whitespace from each line
+        lines = text.split("\n")
+        lines = [line.strip() for line in lines]
+        text = "\n".join(lines)
+
+        # Remove leading/trailing whitespace from entire text
         text = text.strip()
 
-        logger.info(f"Text preprocessed: {len(text)} characters")
+        line_count = len([l for l in text.split("\n") if l.strip()])
+        logger.info(f"Text preprocessed: {len(text)} characters, {line_count} non-empty lines")
         return text
 
     def segment_by_clauses(self, text: str) -> List[TextSegment]:
@@ -89,9 +106,9 @@ class TextPreprocessingService:
         logger.info("Segmenting text into clauses...")
 
         segments = []
-        lines = text.split('\n')
+        lines = text.split("\n")
 
-        current_segment = []
+        current_segment: list[str] = []
         current_section = None
         segment_start = 0
         char_position = 0
@@ -109,15 +126,17 @@ class TextPreprocessingService:
             if is_section_header:
                 # Save previous segment
                 if current_segment:
-                    segment_text = '\n'.join(current_segment).strip()
+                    segment_text = "\n".join(current_segment).strip()
                     if segment_text:
-                        segments.append(TextSegment(
-                            text=segment_text,
-                            segment_type='clause',
-                            section_number=current_section,
-                            start_position=segment_start,
-                            end_position=char_position
-                        ))
+                        segments.append(
+                            TextSegment(
+                                text=segment_text,
+                                segment_type="clause",
+                                section_number=current_section,
+                                start_position=segment_start,
+                                end_position=char_position,
+                            )
+                        )
 
                 # Start new segment
                 current_section = self._extract_section_number(line_stripped)
@@ -131,15 +150,17 @@ class TextPreprocessingService:
 
         # Add final segment
         if current_segment:
-            segment_text = '\n'.join(current_segment).strip()
+            segment_text = "\n".join(current_segment).strip()
             if segment_text:
-                segments.append(TextSegment(
-                    text=segment_text,
-                    segment_type='clause',
-                    section_number=current_section,
-                    start_position=segment_start,
-                    end_position=char_position
-                ))
+                segments.append(
+                    TextSegment(
+                        text=segment_text,
+                        segment_type="clause",
+                        section_number=current_section,
+                        start_position=segment_start,
+                        end_position=char_position,
+                    )
+                )
 
         logger.info(f"Segmented into {len(segments)} clauses")
         return segments
@@ -156,25 +177,27 @@ class TextPreprocessingService:
         """
         logger.info("Segmenting text into paragraphs...")
 
-        paragraphs = text.split('\n\n')
+        paragraphs = text.split("\n\n")
         segments = []
 
         char_position = 0
         for para in paragraphs:
             para_stripped = para.strip()
             if para_stripped:
-                segments.append(TextSegment(
-                    text=para_stripped,
-                    segment_type='paragraph',
-                    start_position=char_position,
-                    end_position=char_position + len(para_stripped)
-                ))
+                segments.append(
+                    TextSegment(
+                        text=para_stripped,
+                        segment_type="paragraph",
+                        start_position=char_position,
+                        end_position=char_position + len(para_stripped),
+                    )
+                )
             char_position += len(para) + 2  # +2 for \n\n
 
         logger.info(f"Segmented into {len(segments)} paragraphs")
         return segments
 
-    def extract_metadata(self, text: str) -> Dict[str, any]:
+    def extract_metadata(self, text: str) -> Dict[str, Any]:
         """
         Extract metadata from text.
 
@@ -189,11 +212,11 @@ class TextPreprocessingService:
         metadata = {
             "character_count": len(text),
             "word_count": len(text.split()),
-            "paragraph_count": len(text.split('\n\n')),
-            "line_count": len(text.split('\n')),
-            "avg_paragraph_length": 0,
+            "paragraph_count": len(text.split("\n\n")),
+            "line_count": len(text.split("\n")),
+            "avg_paragraph_length": 0.0,
             "has_numbering": False,
-            "estimated_clauses": 0
+            "estimated_clauses": 0,
         }
 
         # Check for numbered sections
@@ -207,9 +230,9 @@ class TextPreprocessingService:
         metadata["estimated_clauses"] = len(segments)
 
         # Average paragraph length
-        paragraphs = [p for p in text.split('\n\n') if p.strip()]
+        paragraphs = [p for p in text.split("\n\n") if p.strip()]
         if paragraphs:
-            metadata["avg_paragraph_length"] = sum(len(p) for p in paragraphs) / len(paragraphs)
+            metadata["avg_paragraph_length"] = float(sum(len(p) for p in paragraphs) / len(paragraphs))
 
         logger.info(f"Metadata extracted: {metadata}")
         return metadata
@@ -229,9 +252,23 @@ class TextPreprocessingService:
             if re.match(pattern, line):
                 return True
 
-        # Check for all-caps headers
-        if line.isupper() and len(line.split()) <= 5:
+        # Check for all-caps headers (common in legal documents)
+        # Allow up to 8 words to catch headers like "ARTICLE 1 - DEFINITIONS AND INTERPRETATION"
+        if line.isupper() and len(line.split()) <= 8:
             return True
+
+        # Check for title case headers starting with common legal terms
+        legal_header_starters = [
+            "Article", "Section", "Clause", "Part", "Schedule", "Exhibit",
+            "Appendix", "Annex", "Recitals", "Whereas", "Definitions",
+            "Interpretation", "General", "Miscellaneous", "Notices",
+            "Termination", "Confidentiality", "Liability", "Indemnification",
+            "Payment", "Term", "Renewal", "Insurance", "Compliance", "Audit",
+            "Governance", "Dispute", "Force Majeure", "Warranty", "Warranties",
+        ]
+        for starter in legal_header_starters:
+            if line.startswith(starter) and len(line) < 100:
+                return True
 
         return False
 
@@ -246,17 +283,17 @@ class TextPreprocessingService:
             Section number if found
         """
         # Try numbered patterns
-        match = re.match(r'^([\d\.]+)', line)
+        match = re.match(r"^([\d\.]+)", line)
         if match:
-            return match.group(1).rstrip('.')
+            return match.group(1).rstrip(".")
 
         # Try article/section patterns
-        match = re.match(r'^(Article|Section|SECTION)\s+([\d\.]+)', line, re.IGNORECASE)
+        match = re.match(r"^(Article|Section|SECTION)\s+([\d\.]+)", line, re.IGNORECASE)
         if match:
-            return match.group(2).rstrip('.')
+            return match.group(2).rstrip(".")
 
         # Try lettered patterns
-        match = re.match(r'^\(([a-z0-9]+)\)', line)
+        match = re.match(r"^\(([a-z0-9]+)\)", line)
         if match:
             return match.group(1)
 
@@ -276,10 +313,10 @@ class TextPreprocessingService:
 
         # Remove section numbering from start
         for pattern in self.section_patterns:
-            text = re.sub(f'^{pattern}', '', text)
+            text = re.sub(f"^{pattern}", "", text)
 
         # Clean up whitespace
-        text = re.sub(r'\s+', ' ', text)
+        text = re.sub(r"\s+", " ", text)
         text = text.strip()
 
         return text
@@ -295,7 +332,7 @@ class TextPreprocessingService:
             List of sentences
         """
         # Simple sentence splitting (can be improved with spaCy)
-        sentences = re.split(r'(?<=[.!?])\s+(?=[A-Z])', text)
+        sentences = re.split(r"(?<=[.!?])\s+(?=[A-Z])", text)
         return [s.strip() for s in sentences if s.strip()]
 
     def detect_language(self, text: str) -> str:
@@ -310,7 +347,7 @@ class TextPreprocessingService:
         """
         # For POC, assume English
         # In production, use language detection library
-        return 'en'
+        return "en"
 
     def extract_key_terms(self, text: str) -> List[str]:
         """
@@ -334,7 +371,7 @@ class TextPreprocessingService:
         key_terms.extend(quoted)
 
         # Extract defined terms (patterns like "X means Y")
-        definitions = re.findall(r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+(?:means|shall mean)', text)
+        definitions = re.findall(r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+(?:means|shall mean)", text)
         key_terms.extend(definitions)
 
         # Remove duplicates
