@@ -30,7 +30,8 @@ from api.get_overrides import main as get_overrides_handler
 from api.get_override_summary import main as get_override_summary_handler
 
 # Create the Function App
-app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
+# Using ANONYMOUS auth for POC - Static Web App linked backend handles routing
+app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
 
 # Health Check - Anonymous
