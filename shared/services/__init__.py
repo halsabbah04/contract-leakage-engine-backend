@@ -8,6 +8,7 @@ from .nlp_service import NLPService
 from .ocr_service import OCRService
 from .rag_service import RAGService
 from .report_service import ReportService
+from .risk_profile_service import ContractRiskProfile, RiskProfileService
 from .rules_engine import RulesEngine
 from .search_service import SearchService
 from .storage_service import StorageService
@@ -22,6 +23,8 @@ __all__ = [
     "NLPService",
     "ClauseExtractionService",
     "RulesEngine",
+    "RiskProfileService",
+    "ContractRiskProfile",
     "EmbeddingService",
     "SearchService",
     "RAGService",

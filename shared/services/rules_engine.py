@@ -1,7 +1,7 @@
 """Rules engine for detecting commercial leakage based on YAML rules."""
 
 import uuid
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, TYPE_CHECKING
 
 import yaml
 
@@ -10,6 +10,9 @@ from ..models.finding import Assumptions, DetectionMethod, EstimatedImpact, Leak
 from ..utils.config import get_settings
 from ..utils.exceptions import RulesEngineError
 from ..utils.logging import setup_logging
+
+if TYPE_CHECKING:
+    from .risk_profile_service import ContractRiskProfile
 
 logger = setup_logging(__name__)
 settings = get_settings()
@@ -56,6 +59,7 @@ class RulesEngine:
         contract_id: str,
         clauses: List[Clause],
         contract_metadata: Optional[Dict] = None,
+        risk_profile: Optional["ContractRiskProfile"] = None,
     ) -> List[LeakageFinding]:
         """
         Run all rules against contract clauses.
@@ -64,18 +68,28 @@ class RulesEngine:
             contract_id: Contract identifier
             clauses: List of extracted clauses
             contract_metadata: Optional contract metadata (value, duration, etc.)
+            risk_profile: Optional dynamic risk profile for contract-specific calculations
 
         Returns:
             List of detected leakage findings
         """
         logger.info(f"Running rules engine on contract {contract_id} ({len(clauses)} clauses)")
 
+        if risk_profile:
+            logger.info(
+                f"Using dynamic risk profile: value_tier={risk_profile.value_tier}, "
+                f"complexity={risk_profile.complexity_level}, "
+                f"base_multiplier={risk_profile.base_risk_multiplier:.2f}"
+            )
+
         findings = []
         contract_metadata = contract_metadata or {}
 
         for rule in self.rules:
             try:
-                rule_findings = self._execute_rule(rule, contract_id, clauses, contract_metadata)
+                rule_findings = self._execute_rule(
+                    rule, contract_id, clauses, contract_metadata, risk_profile
+                )
                 findings.extend(rule_findings)
             except Exception as e:
                 logger.error(f"Error executing rule {rule.get('rule_id')}: {str(e)}")
@@ -91,6 +105,7 @@ class RulesEngine:
         contract_id: str,
         clauses: List[Clause],
         contract_metadata: Dict,
+        risk_profile: Optional["ContractRiskProfile"] = None,
     ) -> List[LeakageFinding]:
         """
         Execute a single rule against clauses.
@@ -100,6 +115,7 @@ class RulesEngine:
             contract_id: Contract identifier
             clauses: Contract clauses
             contract_metadata: Contract metadata
+            risk_profile: Optional dynamic risk profile
 
         Returns:
             List of findings (if rule matches) - ONE finding per rule
@@ -119,7 +135,12 @@ class RulesEngine:
             # Create ONE finding per rule (aggregate all matching clauses)
             # Use the first matching clause as the primary reference
             finding = self._create_finding(
-                rule, contract_id, matching_clauses[0], contract_metadata, all_matching_clauses=matching_clauses
+                rule,
+                contract_id,
+                matching_clauses[0],
+                contract_metadata,
+                all_matching_clauses=matching_clauses,
+                risk_profile=risk_profile,
             )
             findings.append(finding)
 
@@ -210,6 +231,7 @@ class RulesEngine:
         clause: Clause,
         contract_metadata: Dict,
         all_matching_clauses: Optional[List[Clause]] = None,
+        risk_profile: Optional["ContractRiskProfile"] = None,
     ) -> LeakageFinding:
         """
         Create a LeakageFinding from a matched rule.
@@ -220,6 +242,7 @@ class RulesEngine:
             clause: Primary matched clause (for impact calculation reference)
             contract_metadata: Contract metadata
             all_matching_clauses: All clauses that matched this rule
+            risk_profile: Optional dynamic risk profile for impact calculations
 
         Returns:
             LeakageFinding object
@@ -233,9 +256,11 @@ class RulesEngine:
         # Map severity
         severity = self._map_severity(rule.get("severity", "medium"))
 
-        # Calculate impact
+        # Calculate impact using dynamic risk profile if available
         impact_calc = rule.get("impact_calculation", {})
-        estimated_impact, assumptions = self._calculate_impact(impact_calc, contract_metadata, clause)
+        estimated_impact, assumptions = self._calculate_impact(
+            impact_calc, contract_metadata, clause, category, risk_profile
+        )
 
         # Build explanation
         explanation = rule.get("explanation", "").strip()
@@ -303,15 +328,22 @@ class RulesEngine:
         return mapping.get(severity_str.lower(), Severity.MEDIUM)
 
     def _calculate_impact(
-        self, impact_calc: Dict, contract_metadata: Dict, clause: Clause
+        self,
+        impact_calc: Dict,
+        contract_metadata: Dict,
+        clause: Clause,
+        category: LeakageCategory,
+        risk_profile: Optional["ContractRiskProfile"] = None,
     ) -> tuple[EstimatedImpact, Assumptions]:
         """
-        Calculate estimated financial impact based on rule parameters.
+        Calculate estimated financial impact based on rule parameters and dynamic risk profile.
 
         Args:
             impact_calc: Impact calculation config from rule
             contract_metadata: Contract metadata
             clause: Matched clause
+            category: Leakage category for dynamic probability lookup
+            risk_profile: Optional dynamic risk profile for contract-specific calculations
 
         Returns:
             Tuple of (EstimatedImpact, Assumptions)
@@ -323,13 +355,45 @@ class RulesEngine:
         contract_currency = contract_metadata.get("contract_currency", "USD")
         duration_years = contract_metadata.get("duration_years", 1)
 
-        # Default assumptions
+        # Use dynamic values from risk profile if available
+        if risk_profile:
+            # Use currency-specific inflation rate from profile
+            inflation_rate = risk_profile.inflation_rate
+            remaining_years = risk_profile.remaining_years
+            base_multiplier = risk_profile.base_risk_multiplier
+
+            # Get category-specific risk percentage from profile
+            category_name = self._category_to_risk_name(category)
+            dynamic_risk_pct = risk_profile.get_risk_percentage(category_name)
+
+            logger.debug(
+                f"Using dynamic profile: inflation={inflation_rate:.1%}, "
+                f"remaining_years={remaining_years:.1f}, multiplier={base_multiplier:.2f}, "
+                f"risk_pct={dynamic_risk_pct:.1%} for {category_name}"
+            )
+        else:
+            # Fall back to static defaults
+            inflation_rate = self.config.get("impact_defaults", {}).get("inflation_rate", 0.03)
+            remaining_years = duration_years
+            base_multiplier = 1.0
+            dynamic_risk_pct = None
+
+        # Default assumptions with dynamic values
         assumptions = Assumptions(
-            inflation_rate=self.config.get("impact_defaults", {}).get("inflation_rate", 0.03),
-            remaining_years=duration_years,
+            inflation_rate=inflation_rate,
+            remaining_years=remaining_years,
             annual_volume=None,
-            probability=None,
+            probability=dynamic_risk_pct,
         )
+
+        # Track that dynamic profile was used
+        if risk_profile:
+            assumptions.custom_parameters = {
+                "profile_used": True,
+                "value_tier": risk_profile.value_tier,
+                "complexity_level": risk_profile.complexity_level,
+                "base_multiplier": base_multiplier,
+            }
 
         estimated_impact = EstimatedImpact(
             currency=contract_currency,
@@ -342,21 +406,27 @@ class RulesEngine:
 
         # Calculate based on method
         if method == "inflation_based":
-            inflation_rate = parameters.get("inflation_rate", 0.03)
-            remaining_years = parameters.get("time_period", duration_years)
+            # Use dynamic inflation rate if profile available, otherwise use rule param
+            calc_inflation = inflation_rate if risk_profile else parameters.get("inflation_rate", 0.03)
+            calc_years = remaining_years if risk_profile else parameters.get("time_period", duration_years)
 
             # Calculate cumulative loss from inflation
-            impact_value = contract_value * inflation_rate * remaining_years
+            impact_value = contract_value * calc_inflation * calc_years
 
-            assumptions.inflation_rate = inflation_rate
-            assumptions.remaining_years = remaining_years
+            assumptions.inflation_rate = calc_inflation
+            assumptions.remaining_years = calc_years
 
             estimated_impact.value = impact_value
             estimated_impact.calculation_method = "inflation_based"
 
         elif method == "percentage_of_value":
-            risk_percentage = parameters.get("risk_percentage", 0.10)
+            # Use dynamic risk percentage if profile available
+            risk_percentage = dynamic_risk_pct if dynamic_risk_pct else parameters.get("risk_percentage", 0.10)
             impact_value = contract_value * risk_percentage
+
+            # Apply base multiplier from risk profile
+            if risk_profile:
+                impact_value *= base_multiplier
 
             assumptions.probability = risk_percentage
 
@@ -365,12 +435,19 @@ class RulesEngine:
 
         elif method == "renewal_based":
             expected_increase = parameters.get("expected_increase", 0.05)
-            renewal_probability = parameters.get("renewal_probability", 0.8)
+            # Use dynamic probability if available
+            renewal_probability = dynamic_risk_pct if dynamic_risk_pct else parameters.get("renewal_probability", 0.8)
 
             impact_value = contract_value * expected_increase * renewal_probability
 
+            # Apply base multiplier
+            if risk_profile:
+                impact_value *= base_multiplier
+
             assumptions.probability = renewal_probability
-            assumptions.custom_parameters = {"expected_increase": expected_increase}
+            if not assumptions.custom_parameters:
+                assumptions.custom_parameters = {}
+            assumptions.custom_parameters["expected_increase"] = expected_increase
 
             estimated_impact.value = impact_value
             estimated_impact.calculation_method = "renewal_based"
@@ -381,7 +458,13 @@ class RulesEngine:
 
             impact_value = monthly_value * months_at_risk
 
-            assumptions.custom_parameters = {"months_at_risk": months_at_risk}
+            # Apply base multiplier
+            if risk_profile:
+                impact_value *= base_multiplier
+
+            if not assumptions.custom_parameters:
+                assumptions.custom_parameters = {}
+            assumptions.custom_parameters["months_at_risk"] = months_at_risk
 
             estimated_impact.value = impact_value
             estimated_impact.calculation_method = "opportunity_cost"
@@ -396,13 +479,32 @@ class RulesEngine:
             estimated_impact.value = contract_value * 2
             estimated_impact.confidence = 0.3  # Lower confidence for capped values
 
-        # Set confidence based on data availability
+        # Set confidence based on data availability and profile usage
         if contract_value > 0:
-            estimated_impact.confidence = max(estimated_impact.confidence, 0.7)
+            # Higher confidence when using dynamic profile
+            base_confidence = 0.8 if risk_profile else 0.7
+            estimated_impact.confidence = max(estimated_impact.confidence, base_confidence)
         else:
             estimated_impact.confidence = 0.3
 
         return estimated_impact, assumptions
+
+    def _category_to_risk_name(self, category: LeakageCategory) -> str:
+        """Map LeakageCategory enum to risk profile category name."""
+        mapping = {
+            LeakageCategory.PRICING: "pricing",
+            LeakageCategory.PAYMENT_TERMS: "payment",
+            LeakageCategory.RENEWAL: "renewal",
+            LeakageCategory.AUTO_RENEWAL: "renewal",
+            LeakageCategory.TERMINATION: "termination",
+            LeakageCategory.SERVICE_CREDIT: "service_level",
+            LeakageCategory.LIABILITY_CAP: "liability",
+            LeakageCategory.PENALTY: "penalties",
+            LeakageCategory.VOLUME_DISCOUNT: "volume_commitment",
+            LeakageCategory.DELIVERY: "other",
+            LeakageCategory.OTHER: "other",
+        }
+        return mapping.get(category, "other")
 
     def get_rule_by_id(self, rule_id: str) -> Optional[Dict]:
         """Get rule definition by ID."""

@@ -187,6 +187,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
 
         from shared.db import FindingRepository
         from shared.services.rules_engine import RulesEngine
+        from shared.services.risk_profile_service import RiskProfileService
 
         rules_engine = RulesEngine()
 
@@ -204,6 +205,27 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             logger.info("No contract value found - financial impact calculations will be skipped")
         logger.info(f"Contract duration: {duration_years} years")
 
+        # Build dynamic risk profile for contract-specific calculations
+        risk_profile = None
+        if contract_value and contract_value > 0:
+            logger.info("Building dynamic risk profile for contract...")
+            risk_profile_service = RiskProfileService()
+            risk_profile = risk_profile_service.build_profile(
+                contract_id=contract_id,
+                clauses=clauses,
+                contract_value=contract_value,
+                currency=contract_currency,
+                duration_years=duration_years,
+                start_date=contract.start_date,
+                end_date=contract.end_date,
+            )
+            logger.info(
+                f"Risk profile built: tier={risk_profile.value_tier}, "
+                f"complexity={risk_profile.complexity_level}, "
+                f"inflation={risk_profile.inflation_rate:.1%}, "
+                f"multiplier={risk_profile.base_risk_multiplier:.2f}"
+            )
+
         # Prepare contract metadata for rules engine
         contract_metadata = {
             "contract_value": contract_value or 0,  # Rules engine expects a number
@@ -211,8 +233,8 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             "duration_years": duration_years,
         }
 
-        # Run rules engine
-        findings = rules_engine.detect_leakage(contract_id, clauses, contract_metadata)
+        # Run rules engine with dynamic risk profile
+        findings = rules_engine.detect_leakage(contract_id, clauses, contract_metadata, risk_profile)
         logger.info(f"Rules engine detected {len(findings)} potential issues")
 
         # Store findings in Cosmos DB
