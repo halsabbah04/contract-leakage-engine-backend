@@ -353,6 +353,7 @@ class ReportService:
             Severity.HIGH,
             Severity.MEDIUM,
             Severity.LOW,
+            Severity.INFO,
         ]:
             count = severity_counts.get(severity, 0)
             pct = (count / total * 100) if total > 0 else 0
@@ -411,10 +412,15 @@ class ReportService:
         story.append(Paragraph("Detailed Findings", heading_style))
         story.append(Spacer(1, 0.2 * inch))
 
-        # Sort by severity
+        # Sort by severity (with fallback for unknown severities)
+        severity_order = ["critical", "high", "medium", "low", "info"]
         sorted_findings = sorted(
             findings,
-            key=lambda f: (["critical", "high", "medium", "low"].index(f.severity.value.lower())),
+            key=lambda f: (
+                severity_order.index(f.severity.value.lower())
+                if f.severity and f.severity.value.lower() in severity_order
+                else len(severity_order)  # Put unknown severities at the end
+            ),
         )
 
         for i, finding in enumerate(sorted_findings, 1):
@@ -560,6 +566,7 @@ class ReportService:
             Severity.HIGH,
             Severity.MEDIUM,
             Severity.LOW,
+            Severity.INFO,
         ]:
             row += 1
             count = severity_counts.get(severity, 0)
@@ -681,5 +688,6 @@ class ReportService:
             Severity.HIGH: BrandColors.HIGH_ORANGE,
             Severity.MEDIUM: BrandColors.MEDIUM_YELLOW,
             Severity.LOW: BrandColors.LOW_GREEN,
+            Severity.INFO: BrandColors.ACCENT_BLUE,
         }
         return severity_colors.get(severity, BrandColors.BLACK)

@@ -25,6 +25,7 @@ from api.get_findings import main as get_findings_handler
 from api.list_contracts import main as list_contracts_handler
 from api.dismiss_finding import main as dismiss_finding_handler
 from api.export_report import main as export_report_handler
+from api.get_document import main as get_document_handler
 from api.create_override import main as create_override_handler
 from api.get_overrides import main as get_overrides_handler
 from api.get_override_summary import main as get_override_summary_handler
@@ -92,6 +93,12 @@ def dismiss_finding(req: func.HttpRequest) -> func.HttpResponse:
 @app.route(route="export_report/{contract_id}", methods=["GET"])
 def export_report(req: func.HttpRequest) -> func.HttpResponse:
     return export_report_handler(req)
+
+
+# Get Document (SAS URL for viewing original contract)
+@app.route(route="get_document/{contract_id}", methods=["GET"])
+def get_document(req: func.HttpRequest) -> func.HttpResponse:
+    return get_document_handler(req)
 
 
 # Create Override
