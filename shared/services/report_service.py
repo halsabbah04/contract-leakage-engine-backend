@@ -32,6 +32,13 @@ from ..utils.logging import setup_logging
 logger = setup_logging(__name__)
 
 
+def get_enum_value(value) -> str:
+    """Safely get string value from enum or string."""
+    if hasattr(value, 'value'):
+        return value.value
+    return str(value) if value else ""
+
+
 class ReportService:
     """Service for generating analysis reports in PDF and Excel formats."""
 
@@ -302,7 +309,7 @@ class ReportService:
                 "Upload Date:",
                 (contract.upload_date.strftime("%Y-%m-%d %H:%M") if contract.upload_date else "N/A"),
             ],
-            ["Status:", contract.status.value if contract.status else "Unknown"],
+            ["Status:", get_enum_value(contract.status) if contract.status else "Unknown"],
             [
                 "Total Clauses:",
                 str(len(contract.clause_ids) if contract.clause_ids else 0),
@@ -357,7 +364,7 @@ class ReportService:
         ]:
             count = severity_counts.get(severity, 0)
             pct = (count / total * 100) if total > 0 else 0
-            severity_data.append([severity.value.capitalize(), str(count), f"{pct:.1f}%"])
+            severity_data.append([get_enum_value(severity).capitalize(), str(count), f"{pct:.1f}%"])
 
         severity_table = Table(severity_data, colWidths=[2 * inch, 1.5 * inch, 1.5 * inch])
         severity_table.setStyle(
@@ -417,8 +424,8 @@ class ReportService:
         sorted_findings = sorted(
             findings,
             key=lambda f: (
-                severity_order.index(f.severity.value.lower())
-                if f.severity and f.severity.value.lower() in severity_order
+                severity_order.index(get_enum_value(f.severity).lower())
+                if f.severity and get_enum_value(f.severity).lower() in severity_order
                 else len(severity_order)  # Put unknown severities at the end
             ),
         )
@@ -442,10 +449,10 @@ class ReportService:
 
             # Finding details
             finding_data = [
-                ["Category:", finding.leakage_category.value],
-                ["Severity:", finding.severity.value.upper()],
+                ["Category:", get_enum_value(finding.leakage_category)],
+                ["Severity:", get_enum_value(finding.severity).upper()],
                 ["Confidence:", f"{finding.confidence * 100:.0f}%"],
-                ["Detection Method:", finding.detection_method.value.upper()],
+                ["Detection Method:", get_enum_value(finding.detection_method).upper()],
             ]
 
             if finding.estimated_impact and finding.estimated_impact.value:
@@ -538,7 +545,7 @@ class ReportService:
 
         row += 1
         ws[f"A{row}"] = "Status:"
-        ws[f"B{row}"] = contract.status.value if contract.status else "Unknown"
+        ws[f"B{row}"] = get_enum_value(contract.status) if contract.status else "Unknown"
         self._apply_header_style(ws[f"A{row}"])
 
         row += 1
@@ -572,7 +579,7 @@ class ReportService:
             count = severity_counts.get(severity, 0)
             pct = (count / total * 100) if total > 0 else 0
 
-            ws[f"A{row}"] = severity.value.capitalize()
+            ws[f"A{row}"] = get_enum_value(severity).capitalize()
             ws[f"B{row}"] = count
             ws[f"C{row}"] = f"{pct:.1f}%"
 
@@ -605,11 +612,11 @@ class ReportService:
         # Data rows
         for row, finding in enumerate(findings, 2):
             ws.cell(row=row, column=1).value = finding.id
-            ws.cell(row=row, column=2).value = finding.leakage_category.value
-            ws.cell(row=row, column=3).value = finding.severity.value.upper()
+            ws.cell(row=row, column=2).value = get_enum_value(finding.leakage_category)
+            ws.cell(row=row, column=3).value = get_enum_value(finding.severity).upper()
             ws.cell(row=row, column=4).value = finding.risk_type
             ws.cell(row=row, column=5).value = f"{finding.confidence * 100:.0f}%"
-            ws.cell(row=row, column=6).value = finding.detection_method.value.upper()
+            ws.cell(row=row, column=6).value = get_enum_value(finding.detection_method).upper()
 
             if finding.estimated_impact and finding.estimated_impact.value:
                 ws.cell(row=row, column=7).value = f"${finding.estimated_impact.value:,.2f}"
