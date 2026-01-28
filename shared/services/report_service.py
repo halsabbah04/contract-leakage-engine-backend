@@ -187,6 +187,7 @@ class ReportService:
             "CoverTitle",
             fontName=Typography.PRIMARY_BOLD,
             fontSize=Typography.COVER_TITLE,
+            leading=Typography.COVER_TITLE * 1.3,  # Line height for wrapped text
             textColor=BrandColors.WHITE,
             alignment=TA_CENTER,
             spaceAfter=Layout.PARAGRAPH_SPACING,
