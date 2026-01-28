@@ -79,12 +79,33 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
 
         logger.info(f"Document URL generated for contract {contract_id}")
 
+        # Extract filename from blob_uri or use contract_name
+        filename = contract.contract_name
+        if contract.blob_uri:
+            # blob_uri format: .../contracts/{contract_id}/original/{filename}
+            try:
+                filename = contract.blob_uri.split("/")[-1]
+            except (IndexError, AttributeError):
+                pass
+
+        # Determine content type from file_type
+        content_type_map = {
+            "pdf": "application/pdf",
+            "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "doc": "application/msword",
+            "txt": "text/plain",
+        }
+        content_type = content_type_map.get(
+            (contract.file_type or "").lower(),
+            "application/octet-stream"
+        )
+
         return func.HttpResponse(
             json.dumps({
                 "contract_id": contract_id,
                 "document_url": sas_url,
-                "filename": contract.original_filename or "contract",
-                "content_type": contract.file_type or "application/octet-stream",
+                "filename": filename,
+                "content_type": content_type,
                 "expires_in_hours": expiry_hours,
             }),
             status_code=200,
