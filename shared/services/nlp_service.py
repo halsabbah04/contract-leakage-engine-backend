@@ -334,21 +334,24 @@ class NLPService:
             # Remove currency symbols and commas
             cleaned = re.sub(r"[$£€¥,]", "", text)
 
-            # Check for multipliers (million, billion, thousand)
-            text_lower = cleaned.lower()
-            multiplier = 1.0
-            if "billion" in text_lower:
-                multiplier = 1_000_000_000
-            elif "million" in text_lower:
-                multiplier = 1_000_000
-            elif "thousand" in text_lower or " k" in text_lower:
-                multiplier = 1_000
-
-            # Extract number
+            # Extract number first
             match = re.search(r"\d+(?:\.\d+)?", cleaned)
-            if match:
-                value = float(match.group()) * multiplier
-                return value
+            if not match:
+                return None
+
+            value = float(match.group())
+
+            # Check for multipliers - but only apply if the number is small
+            # This prevents "7,650,000 million" being interpreted as 7.65 trillion
+            text_lower = cleaned.lower()
+            if "billion" in text_lower and value < 1000:
+                value *= 1_000_000_000
+            elif "million" in text_lower and value < 10000:
+                value *= 1_000_000
+            elif ("thousand" in text_lower or " k" in text_lower) and value < 10000:
+                value *= 1_000
+
+            return value
         except (ValueError, AttributeError, TypeError) as e:
             logger.debug(f"Failed to parse money from '{text}': {e}")
         return None
@@ -409,13 +412,14 @@ class NLPService:
                 amount_str = match.group(1).replace(",", "")
                 amount = float(amount_str)
 
-                # Check for multipliers
+                # Check for multipliers - but only apply if the number is small
+                # (prevents "7,650,000 million" being interpreted as 7.65 trillion)
                 full_match = match.group(0).lower()
-                if "billion" in full_match:
+                if "billion" in full_match and amount < 1000:
                     amount *= 1_000_000_000
-                elif "million" in full_match:
+                elif "million" in full_match and amount < 10000:
                     amount *= 1_000_000
-                elif "thousand" in full_match or " k" in full_match:
+                elif ("thousand" in full_match or " k" in full_match) and amount < 10000:
                     amount *= 1_000
 
                 if amount > 0:
@@ -432,12 +436,13 @@ class NLPService:
                 amount_str = match.group(1).replace(",", "")
                 amount = float(amount_str)
 
+                # Check for multipliers - but only apply if the number is small
                 full_match = match.group(0).lower()
-                if "billion" in full_match:
+                if "billion" in full_match and amount < 1000:
                     amount *= 1_000_000_000
-                elif "million" in full_match:
+                elif "million" in full_match and amount < 10000:
                     amount *= 1_000_000
-                elif "thousand" in full_match or " k" in full_match:
+                elif ("thousand" in full_match or " k" in full_match) and amount < 10000:
                     amount *= 1_000
 
                 if amount > 0 and amount not in amounts:

@@ -386,9 +386,19 @@ class RulesEngine:
             estimated_impact.value = impact_value
             estimated_impact.calculation_method = "opportunity_cost"
 
+        # Sanity check: cap impact at 2x contract value to prevent absurd values
+        # (e.g., from OCR errors or incorrect multiplier application)
+        if contract_value > 0 and estimated_impact.value > contract_value * 2:
+            logger.warning(
+                f"Impact value {estimated_impact.value:,.0f} exceeds 2x contract value "
+                f"{contract_value:,.0f}. Capping at 2x contract value."
+            )
+            estimated_impact.value = contract_value * 2
+            estimated_impact.confidence = 0.3  # Lower confidence for capped values
+
         # Set confidence based on data availability
         if contract_value > 0:
-            estimated_impact.confidence = 0.7
+            estimated_impact.confidence = max(estimated_impact.confidence, 0.7)
         else:
             estimated_impact.confidence = 0.3
 
