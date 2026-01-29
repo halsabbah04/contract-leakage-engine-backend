@@ -3,6 +3,16 @@
 from .clause import Clause, ClauseType, ExtractedEntities
 from .contract import Contract, ContractSource, ContractStatus
 from .finding import Assumptions, DetectionMethod, EstimatedImpact, LeakageCategory, LeakageFinding, Severity
+from .obligation import (
+    Obligation,
+    ObligationExtractionResult,
+    ObligationPriority,
+    ObligationStatus,
+    ObligationSummary,
+    ObligationType,
+    RecurrencePattern,
+    ResponsibleParty,
+)
 from .override import FindingStatus, OverrideAction, OverrideSummary, UserOverride
 from .session import AnalysisSession, FindingOverride, UserAction
 
@@ -22,6 +32,15 @@ __all__ = [
     "DetectionMethod",
     "EstimatedImpact",
     "Assumptions",
+    # Obligation models
+    "Obligation",
+    "ObligationType",
+    "ObligationStatus",
+    "ObligationPriority",
+    "RecurrencePattern",
+    "ResponsibleParty",
+    "ObligationSummary",
+    "ObligationExtractionResult",
     # Session models
     "AnalysisSession",
     "FindingOverride",

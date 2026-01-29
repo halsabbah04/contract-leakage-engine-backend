@@ -29,6 +29,8 @@ from api.get_document import main as get_document_handler
 from api.create_override import main as create_override_handler
 from api.get_overrides import main as get_overrides_handler
 from api.get_override_summary import main as get_override_summary_handler
+from api.run_agents import main as run_agents_handler
+from api.get_obligations import main as get_obligations_handler
 
 # Create the Function App
 # Using ANONYMOUS auth for POC - Static Web App linked backend handles routing
@@ -117,3 +119,15 @@ def get_overrides(req: func.HttpRequest) -> func.HttpResponse:
 @app.route(route="overrides/{contract_id}/summary", methods=["GET"])
 def get_override_summary(req: func.HttpRequest) -> func.HttpResponse:
     return get_override_summary_handler(req)
+
+
+# Run Agents (Obligation Extraction, etc.)
+@app.route(route="run_agents/{contract_id}", methods=["POST"])
+def run_agents(req: func.HttpRequest) -> func.HttpResponse:
+    return run_agents_handler(req)
+
+
+# Get Obligations
+@app.route(route="obligations/{contract_id}", methods=["GET"])
+def get_obligations(req: func.HttpRequest) -> func.HttpResponse:
+    return get_obligations_handler(req)

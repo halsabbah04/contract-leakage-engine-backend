@@ -24,6 +24,7 @@ class Settings:
         self.COSMOS_FINDINGS_CONTAINER: str = os.getenv("CosmosDBFindingsContainer", "leakage_findings")
         self.COSMOS_SESSIONS_CONTAINER: str = os.getenv("CosmosDBSessionsContainer", "analysis_sessions")
         self.COSMOS_OVERRIDES_CONTAINER: str = os.getenv("CosmosDBOverridesContainer", "user_overrides")
+        self.COSMOS_OBLIGATIONS_CONTAINER: str = os.getenv("CosmosDBObligationsContainer", "obligations")
 
         # Azure Blob Storage
         self.STORAGE_CONNECTION_STRING: str = os.getenv("StorageConnectionString", "")

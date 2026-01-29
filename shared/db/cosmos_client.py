@@ -119,6 +119,11 @@ class CosmosDBClient:
         """Get user_overrides container."""
         return self.get_container(self.settings.COSMOS_OVERRIDES_CONTAINER)
 
+    @property
+    def obligations_container(self) -> ContainerProxy:
+        """Get obligations container."""
+        return self.get_container(self.settings.COSMOS_OBLIGATIONS_CONTAINER)
+
     def close(self):
         """Close the Cosmos DB client connection."""
         if self._client:

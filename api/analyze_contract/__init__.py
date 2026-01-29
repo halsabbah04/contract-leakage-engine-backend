@@ -26,8 +26,11 @@ def extract_contract_value_from_clauses(clauses: List[Clause]) -> Tuple[Optional
     """
     Extract estimated contract value and currency from monetary entities in clauses.
 
-    Looks for the largest monetary value mentioned in the contract,
-    which is typically the total contract value.
+    Uses a smart approach:
+    1. Collect all monetary values from pricing/payment/service-level clauses (most likely to contain contract value)
+    2. If no values from those, fall back to all clauses
+    3. Use the MEDIAN of the top 3 values (to avoid outliers like insurance caps or penalties)
+    4. Validate the value is within a reasonable range
 
     Args:
         clauses: List of extracted clauses with entities
@@ -35,27 +38,58 @@ def extract_contract_value_from_clauses(clauses: List[Clause]) -> Tuple[Optional
     Returns:
         Tuple of (contract_value, currency) - both None if no monetary values found
     """
-    max_value: Optional[float] = None
+    # Maximum reasonable contract value (1 billion) - anything higher is likely an error
+    MAX_REASONABLE_VALUE = 1_000_000_000
+    # Minimum reasonable contract value - below this likely not the actual contract value
+    MIN_REASONABLE_VALUE = 1_000
+
+    # Preferred clause types for contract value extraction
+    value_clause_types = {'pricing', 'payment', 'payment_terms', 'service_level', 'sla'}
+
+    all_amounts: List[float] = []
+    priority_amounts: List[float] = []
     extracted_currency: Optional[str] = None
 
     for clause in clauses:
         if clause.entities:
-            # Get amounts from entities (backend model uses 'amounts' list)
+            # Get amounts from entities
             amounts = clause.entities.amounts if clause.entities.amounts else []
             for amount in amounts:
-                if amount and (max_value is None or amount > max_value):
-                    max_value = amount
-                    # Use the currency from this clause's entities
-                    extracted_currency = clause.entities.currency or extracted_currency
+                if amount and MIN_REASONABLE_VALUE <= amount <= MAX_REASONABLE_VALUE:
+                    all_amounts.append(amount)
+                    # Track currency from first valid amount
+                    if extracted_currency is None and clause.entities.currency:
+                        extracted_currency = clause.entities.currency
 
-    if max_value is not None:
-        # Default to USD if no currency was found
-        final_currency = extracted_currency or "USD"
-        logger.info(f"Extracted contract value: {final_currency} {max_value:,.2f}")
-        return max_value, final_currency
-    else:
-        logger.info("No monetary values found in contract - financial impact will not be calculated")
+                    # Prioritize amounts from pricing/payment clauses
+                    if clause.clause_type and clause.clause_type.lower() in value_clause_types:
+                        priority_amounts.append(amount)
+                elif amount and amount > MAX_REASONABLE_VALUE:
+                    logger.warning(f"Ignoring unreasonably large value: {amount:,.0f} (likely OCR error or insurance cap)")
+
+    # Use priority amounts if available, otherwise all amounts
+    candidate_amounts = priority_amounts if priority_amounts else all_amounts
+
+    if not candidate_amounts:
+        logger.info("No reasonable monetary values found in contract - financial impact will not be calculated")
         return None, None
+
+    # Sort descending and take median of top 3 to avoid outliers
+    candidate_amounts.sort(reverse=True)
+    top_amounts = candidate_amounts[:3]
+
+    if len(top_amounts) == 1:
+        estimated_value = top_amounts[0]
+    elif len(top_amounts) == 2:
+        estimated_value = (top_amounts[0] + top_amounts[1]) / 2
+    else:
+        # Median of top 3
+        estimated_value = top_amounts[1]
+
+    final_currency = extracted_currency or "USD"
+    logger.info(f"Extracted contract value: {final_currency} {estimated_value:,.2f} (from {len(candidate_amounts)} monetary values)")
+
+    return estimated_value, final_currency
 
 
 def calculate_contract_duration_years(contract) -> int:
@@ -269,6 +303,36 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                 logger.error(f"AI detection failed (continuing with rule-based findings): {str(e)}")
                 # Continue even if AI detection fails - we still have rule-based findings
 
+        # Phase 6: Obligation Extraction
+        obligations_extracted = 0
+        try:
+            logger.info("Phase 6: Extracting contractual obligations...")
+
+            import asyncio
+            from shared.agents.obligation_agent import ObligationExtractionAgent
+            from shared.agents.base_agent import AgentStatus
+
+            obligation_agent = ObligationExtractionAgent(contract_id, contract)
+
+            # Run async agent in event loop
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                agent_result = loop.run_until_complete(obligation_agent.run())
+                # Check status (COMPLETED or PARTIAL are successful)
+                if agent_result.status in [AgentStatus.COMPLETED, AgentStatus.PARTIAL] and agent_result.data:
+                    # agent_result.data is an ObligationExtractionResult object
+                    obligations_extracted = agent_result.data.summary.total_obligations
+                    logger.info(f"Extracted {obligations_extracted} obligations")
+                else:
+                    logger.warning(f"Obligation extraction completed with issues: {agent_result.error}")
+            finally:
+                loop.close()
+
+        except Exception as e:
+            logger.error(f"Obligation extraction failed (continuing): {str(e)}")
+            # Continue even if obligation extraction fails
+
         # Calculate duration
         duration = time.time() - start_time
         contract_repo.set_processing_duration(contract_id, duration)
@@ -296,6 +360,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                     "total_clauses_extracted": len(clauses) if 'clauses' in dir() else 0,
                     "total_findings": len(findings),
                     "findings_by_severity": findings_by_severity,
+                    "total_obligations_extracted": obligations_extracted,
                     "processing_time_seconds": round(duration, 2),
                 }
             ),

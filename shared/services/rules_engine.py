@@ -421,11 +421,12 @@ class RulesEngine:
 
         elif method == "percentage_of_value":
             # Use dynamic risk percentage if profile available
+            # NOTE: dynamic_risk_pct already includes base_multiplier (applied in risk_profile_service)
             risk_percentage = dynamic_risk_pct if dynamic_risk_pct else parameters.get("risk_percentage", 0.10)
             impact_value = contract_value * risk_percentage
 
-            # Apply base multiplier from risk profile
-            if risk_profile:
+            # Only apply base multiplier when NOT using dynamic_risk_pct (to avoid double multiplication)
+            if risk_profile and not dynamic_risk_pct:
                 impact_value *= base_multiplier
 
             assumptions.probability = risk_percentage
@@ -436,12 +437,13 @@ class RulesEngine:
         elif method == "renewal_based":
             expected_increase = parameters.get("expected_increase", 0.05)
             # Use dynamic probability if available
+            # NOTE: dynamic_risk_pct already includes base_multiplier (applied in risk_profile_service)
             renewal_probability = dynamic_risk_pct if dynamic_risk_pct else parameters.get("renewal_probability", 0.8)
 
             impact_value = contract_value * expected_increase * renewal_probability
 
-            # Apply base multiplier
-            if risk_profile:
+            # Only apply base multiplier when NOT using dynamic_risk_pct (to avoid double multiplication)
+            if risk_profile and not dynamic_risk_pct:
                 impact_value *= base_multiplier
 
             assumptions.probability = renewal_probability
@@ -458,7 +460,7 @@ class RulesEngine:
 
             impact_value = monthly_value * months_at_risk
 
-            # Apply base multiplier
+            # Apply base multiplier for opportunity cost (not derived from dynamic_risk_pct)
             if risk_profile:
                 impact_value *= base_multiplier
 
@@ -469,14 +471,15 @@ class RulesEngine:
             estimated_impact.value = impact_value
             estimated_impact.calculation_method = "opportunity_cost"
 
-        # Sanity check: cap impact at 2x contract value to prevent absurd values
-        # (e.g., from OCR errors or incorrect multiplier application)
-        if contract_value > 0 and estimated_impact.value > contract_value * 2:
+        # Sanity check: cap individual finding impact at 30% of contract value
+        # No single finding should exceed 30% of total contract value
+        max_impact_per_finding = contract_value * 0.30
+        if contract_value > 0 and estimated_impact.value > max_impact_per_finding:
             logger.warning(
-                f"Impact value {estimated_impact.value:,.0f} exceeds 2x contract value "
-                f"{contract_value:,.0f}. Capping at 2x contract value."
+                f"Impact value {estimated_impact.value:,.0f} exceeds 30% of contract value "
+                f"{contract_value:,.0f}. Capping at {max_impact_per_finding:,.0f}."
             )
-            estimated_impact.value = contract_value * 2
+            estimated_impact.value = max_impact_per_finding
             estimated_impact.confidence = 0.3  # Lower confidence for capped values
 
         # Set confidence based on data availability and profile usage

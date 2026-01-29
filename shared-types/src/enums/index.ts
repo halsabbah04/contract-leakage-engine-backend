@@ -91,3 +91,65 @@ export enum OverrideAction {
   REJECT = "reject",
   RESOLVE = "resolve"
 }
+
+// Obligation-related enums
+export enum ObligationType {
+  PAYMENT = "payment",
+  DELIVERY = "delivery",
+  NOTICE = "notice",
+  REPORTING = "reporting",
+  COMPLIANCE = "compliance",
+  PERFORMANCE = "performance",
+  RENEWAL = "renewal",
+  TERMINATION = "termination",
+  INSURANCE = "insurance",
+  AUDIT = "audit",
+  CONFIDENTIALITY = "confidentiality",
+  OTHER = "other"
+}
+
+export enum ObligationStatus {
+  UPCOMING = "upcoming",
+  DUE_SOON = "due_soon",
+  OVERDUE = "overdue",
+  COMPLETED = "completed",
+  WAIVED = "waived",
+  NOT_APPLICABLE = "not_applicable"
+}
+
+export enum ObligationPriority {
+  CRITICAL = "critical",
+  HIGH = "high",
+  MEDIUM = "medium",
+  LOW = "low"
+}
+
+export enum RecurrencePattern {
+  NONE = "none",
+  DAILY = "daily",
+  WEEKLY = "weekly",
+  MONTHLY = "monthly",
+  QUARTERLY = "quarterly",
+  SEMI_ANNUALLY = "semi_annually",
+  ANNUALLY = "annually",
+  CUSTOM = "custom"
+}
+
+// Agent-related enums
+export enum AgentType {
+  OBLIGATION = "obligation",
+  PARTY_INTELLIGENCE = "party_intelligence",
+  BENCHMARK = "benchmark",
+  COMPLIANCE = "compliance",
+  CONTRACT_COMPARISON = "contract_comparison",
+  RISK_FORECAST = "risk_forecast",
+  NEGOTIATION = "negotiation"
+}
+
+export enum AgentStatus {
+  PENDING = "pending",
+  RUNNING = "running",
+  COMPLETED = "completed",
+  FAILED = "failed",
+  PARTIAL = "partial"
+}

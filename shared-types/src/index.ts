@@ -14,6 +14,7 @@ export * from './models/clause';
 export * from './models/finding';
 export * from './models/session';
 export * from './models/override';
+export * from './models/obligation';
 
 // API Types
 export * from './api/requests';

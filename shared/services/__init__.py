@@ -1,5 +1,6 @@
 """Business logic services for the Contract Leakage Engine."""
 
+from .agent_orchestrator import AgentOrchestrator, AgentType, OrchestratorConfig, OrchestrationResult, get_orchestrator
 from .ai_detection_service import AIDetectionService
 from .clause_extraction_service import ClauseExtractionService
 from .document_service import DocumentService
@@ -30,4 +31,9 @@ __all__ = [
     "RAGService",
     "AIDetectionService",
     "ReportService",
+    "AgentOrchestrator",
+    "AgentType",
+    "OrchestratorConfig",
+    "OrchestrationResult",
+    "get_orchestrator",
 ]
