@@ -148,48 +148,70 @@ class ObligationExtractionAgent(BaseAgent):
         """
         Extract obligations from clauses using GPT.
 
+        Processes clauses in batches to avoid token limits.
+
         Args:
             clauses: List of clauses to analyze
 
         Returns:
             List of extracted Obligation objects
         """
-        try:
-            # Build prompts
-            system_prompt = self._build_system_prompt()
-            user_prompt = self._build_user_prompt(clauses)
+        # Process in batches of 40 clauses to avoid token limits
+        BATCH_SIZE = 40
+        all_obligations: List[Obligation] = []
 
-            # Call GPT
-            logger.info(f"[{self.agent_name}] Calling GPT for obligation extraction...")
+        # Split clauses into batches
+        batches = [clauses[i:i + BATCH_SIZE] for i in range(0, len(clauses), BATCH_SIZE)]
+        logger.info(f"[{self.agent_name}] Processing {len(clauses)} clauses in {len(batches)} batches")
 
-            response = self.openai_client.chat.completions.create(
-                model=settings.AZURE_OPENAI_DEPLOYMENT_NAME,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                temperature=0.2,
-                max_tokens=4000,
-                response_format={"type": "json_object"},
-            )
+        system_prompt = self._build_system_prompt()
 
-            # Parse response
-            response_text = response.choices[0].message.content
-            analysis_result = json.loads(response_text)
+        for batch_num, batch in enumerate(batches, 1):
+            try:
+                logger.info(f"[{self.agent_name}] Processing batch {batch_num}/{len(batches)} ({len(batch)} clauses)...")
 
-            # Convert to Obligation objects
-            obligations = self._parse_obligations(analysis_result)
+                user_prompt = self._build_user_prompt(batch)
 
-            return obligations
+                response = self.openai_client.chat.completions.create(
+                    model=settings.AZURE_OPENAI_DEPLOYMENT_NAME,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    temperature=0.2,
+                    response_format={"type": "json_object"},
+                    extra_body={"max_completion_tokens": 8000},
+                )
 
-        except json.JSONDecodeError as e:
-            logger.error(f"[{self.agent_name}] Failed to parse GPT response: {str(e)}")
-            self.add_warning(f"Failed to parse AI response: {str(e)}")
-            return []
-        except Exception as e:
-            logger.error(f"[{self.agent_name}] AI extraction failed: {str(e)}")
-            self.add_warning(f"AI extraction error: {str(e)}")
-            return []
+                response_text = response.choices[0].message.content
+                finish_reason = response.choices[0].finish_reason
+
+                if not response_text:
+                    logger.warning(f"[{self.agent_name}] Batch {batch_num}: Empty response (finish_reason: {finish_reason})")
+                    self.add_warning(f"Batch {batch_num}: Empty GPT response")
+                    continue
+
+                if finish_reason == "length":
+                    logger.warning(f"[{self.agent_name}] Batch {batch_num}: Response truncated (finish_reason: length)")
+                    self.add_warning(f"Batch {batch_num}: Response may be incomplete")
+
+                logger.info(f"[{self.agent_name}] Batch {batch_num}: Response length {len(response_text)}")
+
+                analysis_result = json.loads(response_text)
+                batch_obligations = self._parse_obligations(analysis_result)
+
+                logger.info(f"[{self.agent_name}] Batch {batch_num}: Extracted {len(batch_obligations)} obligations")
+                all_obligations.extend(batch_obligations)
+
+            except json.JSONDecodeError as e:
+                logger.error(f"[{self.agent_name}] Batch {batch_num}: Failed to parse response: {str(e)}")
+                self.add_warning(f"Batch {batch_num}: Parse error - {str(e)}")
+            except Exception as e:
+                logger.error(f"[{self.agent_name}] Batch {batch_num}: Extraction failed: {str(e)}")
+                self.add_warning(f"Batch {batch_num}: Error - {str(e)}")
+
+        logger.info(f"[{self.agent_name}] Total obligations extracted from all batches: {len(all_obligations)}")
+        return all_obligations
 
     def _build_system_prompt(self) -> str:
         """Build the system prompt for obligation extraction."""
@@ -370,25 +392,25 @@ Summary: {clause.normalized_summary or 'N/A'}
         # Map priority
         priority = self._map_priority(item.get("priority", "medium"))
 
-        # Create obligation
+        # Create obligation (handle None values explicitly for required string fields)
         obligation = Obligation(
             id=obligation_id,
             contract_id=self.contract_id,
             partition_key=self.contract_id,
             obligation_type=obligation_type,
-            title=item.get("title", "Untitled Obligation"),
-            description=item.get("description", ""),
+            title=item.get("title") or "Untitled Obligation",
+            description=item.get("description") or "",
             due_date=due_date,
             effective_date=effective_date,
             is_recurring=item.get("is_recurring", False),
             recurrence_pattern=recurrence_pattern,
             responsible_party=responsible_party,
             amount=item.get("amount"),
-            currency=item.get("currency", "USD"),
+            currency=item.get("currency") or "USD",
             priority=priority,
-            clause_ids=item.get("source_clause_ids", []),
+            clause_ids=item.get("source_clause_ids") or [],
             extracted_text=item.get("extracted_text"),
-            extraction_confidence=item.get("confidence", 0.7),
+            extraction_confidence=item.get("confidence") or 0.7,
         )
 
         return obligation
