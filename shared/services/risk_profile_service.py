@@ -249,8 +249,8 @@ class RiskProfileService:
                     has_price_escalation = True
 
             # Check clause text for protective provisions
-            if clause.text:
-                text_lower = clause.text.lower()
+            if clause.original_text:
+                text_lower = clause.original_text.lower()
 
                 if any(term in text_lower for term in ["liability cap", "limited to", "not exceed"]):
                     has_liability_cap = True
