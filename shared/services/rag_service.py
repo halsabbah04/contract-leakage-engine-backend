@@ -1,5 +1,7 @@
 """RAG (Retrieval-Augmented Generation) service for contract analysis."""
 
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional
 
 from ..db import ClauseRepository, get_cosmos_client
@@ -13,6 +15,9 @@ logger = setup_logging(__name__)
 
 class RAGService:
     """Service for RAG-based contract analysis."""
+
+    # Thread pool for parallel query execution
+    _executor = ThreadPoolExecutor(max_workers=5)
 
     def __init__(self):
         """Initialize RAG service with embedding and search services."""
@@ -219,7 +224,8 @@ class RAGService:
         Build RAG context for AI-powered analysis.
 
         Retrieves relevant clauses based on multiple queries and builds
-        a structured context for LLM consumption.
+        a structured context for LLM consumption. Executes queries in parallel
+        for faster context building.
 
         Args:
             queries: List of search queries (leakage patterns to look for)
@@ -231,13 +237,11 @@ class RAGService:
             Dictionary with context and metadata
         """
         try:
-            logger.info(f"Building RAG context with {len(queries)} queries")
+            logger.info(f"Building RAG context with {len(queries)} queries (parallel execution)")
 
-            all_results = []
-            seen_clause_ids = set()
-
-            # Execute all queries
-            for query in queries:
+            # Execute all queries in parallel using thread pool
+            def execute_query(query: str) -> tuple:
+                """Execute a single query and return results with query."""
                 results = self.semantic_search(
                     query=query,
                     contract_id=contract_id,
@@ -245,20 +249,40 @@ class RAGService:
                     min_score=0.65,
                     use_hybrid=True,
                 )
+                return query, results
 
-                # Deduplicate
-                for result in results:
-                    clause_id = result["clause_id"]
-                    if clause_id not in seen_clause_ids:
-                        result["matched_query"] = query
-                        all_results.append(result)
-                        seen_clause_ids.add(clause_id)
+            # Submit all queries to thread pool for parallel execution
+            futures = [self._executor.submit(execute_query, query) for query in queries]
 
-                        if len(all_results) >= max_total_clauses:
-                            break
+            # Collect results as they complete
+            all_results = []
+            seen_clause_ids = set()
 
-                if len(all_results) >= max_total_clauses:
-                    break
+            for future in futures:
+                try:
+                    query, results = future.result(timeout=30)  # 30 second timeout per query
+
+                    # Deduplicate and add matched query info
+                    for result in results:
+                        clause_id = result["clause_id"]
+                        if clause_id not in seen_clause_ids:
+                            result["matched_query"] = query
+                            all_results.append(result)
+                            seen_clause_ids.add(clause_id)
+
+                except Exception as e:
+                    logger.warning(f"Query execution failed: {str(e)}")
+                    continue
+
+            if not all_results:
+                logger.warning("No results from parallel queries")
+                return {
+                    "contract_id": contract_id,
+                    "query_count": len(queries),
+                    "retrieved_clauses": [],
+                    "total_clauses": 0,
+                    "context_summary": "No relevant clauses found.",
+                }
 
             # Sort by relevance score
             score_key = "combined_score" if "combined_score" in all_results[0] else "similarity_score"
@@ -276,7 +300,7 @@ class RAGService:
                 "context_summary": self._summarize_context(all_results),
             }
 
-            logger.info(f"RAG context built: {len(all_results)} clauses retrieved")
+            logger.info(f"RAG context built: {len(all_results)} clauses retrieved (parallel)")
 
             return context
 

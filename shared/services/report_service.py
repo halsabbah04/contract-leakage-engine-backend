@@ -393,6 +393,17 @@ class ReportService:
         impact_values = [f.estimated_impact.value for f in findings if f.estimated_impact and f.estimated_impact.value]
         total_impact = sum(impact_values)
 
+        # Determine primary currency (most common currency in findings with impact)
+        primary_currency = "USD"  # Default
+        if findings:
+            currency_counts = {}
+            for f in findings:
+                if f.estimated_impact and f.estimated_impact.currency:
+                    curr = f.estimated_impact.currency
+                    currency_counts[curr] = currency_counts.get(curr, 0) + 1
+            if currency_counts:
+                primary_currency = max(currency_counts, key=currency_counts.get)
+
         if total_impact > 0:
             impact_style = ParagraphStyle(
                 "ImpactHighlight",
@@ -400,7 +411,7 @@ class ReportService:
                 fontSize=Typography.BODY_LARGE,
                 textColor=BrandColors.DARK_GREY,
             )
-            impact_text = f"<b>Total Estimated Financial Impact:</b> ${total_impact:,.2f} USD"
+            impact_text = f"<b>Total Estimated Financial Impact:</b> {primary_currency} {total_impact:,.2f}"
             story.append(Paragraph(impact_text, impact_style))
 
         return story
@@ -457,10 +468,11 @@ class ReportService:
             ]
 
             if finding.estimated_impact and finding.estimated_impact.value:
+                currency = finding.estimated_impact.currency or "USD"
                 finding_data.append(
                     [
                         "Estimated Impact:",
-                        f"${finding.estimated_impact.value:,.2f} {finding.estimated_impact.currency}",
+                        f"{currency} {finding.estimated_impact.value:,.2f}",
                     ]
                 )
 
@@ -620,7 +632,8 @@ class ReportService:
             ws.cell(row=row, column=6).value = get_enum_value(finding.detection_method).upper()
 
             if finding.estimated_impact and finding.estimated_impact.value:
-                ws.cell(row=row, column=7).value = f"${finding.estimated_impact.value:,.2f}"
+                currency = finding.estimated_impact.currency or "USD"
+                ws.cell(row=row, column=7).value = f"{currency} {finding.estimated_impact.value:,.2f}"
             else:
                 ws.cell(row=row, column=7).value = "N/A"
 

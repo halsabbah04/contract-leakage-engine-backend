@@ -1,6 +1,7 @@
 """Rules engine for detecting commercial leakage based on YAML rules."""
 
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Optional, TYPE_CHECKING
 
 import yaml
@@ -64,6 +65,8 @@ class RulesEngine:
         """
         Run all rules against contract clauses.
 
+        Uses parallel execution for faster rule processing.
+
         Args:
             contract_id: Contract identifier
             clauses: List of extracted clauses
@@ -73,7 +76,7 @@ class RulesEngine:
         Returns:
             List of detected leakage findings
         """
-        logger.info(f"Running rules engine on contract {contract_id} ({len(clauses)} clauses)")
+        logger.info(f"Running rules engine on contract {contract_id} ({len(clauses)} clauses) - parallel execution")
 
         if risk_profile:
             logger.info(
@@ -82,20 +85,47 @@ class RulesEngine:
                 f"base_multiplier={risk_profile.base_risk_multiplier:.2f}"
             )
 
-        findings = []
         contract_metadata = contract_metadata or {}
 
-        for rule in self.rules:
+        if len(self.rules) <= 1:
+            # Single rule - process directly
+            findings = []
+            for rule in self.rules:
+                try:
+                    rule_findings = self._execute_rule(
+                        rule, contract_id, clauses, contract_metadata, risk_profile
+                    )
+                    findings.extend(rule_findings)
+                except Exception as e:
+                    logger.error(f"Error executing rule {rule.get('rule_id')}: {str(e)}")
+            return findings
+
+        def execute_rule_wrapper(rule: Dict) -> List[LeakageFinding]:
+            """Wrapper to execute a single rule and handle errors."""
             try:
-                rule_findings = self._execute_rule(
+                return self._execute_rule(
                     rule, contract_id, clauses, contract_metadata, risk_profile
                 )
-                findings.extend(rule_findings)
             except Exception as e:
                 logger.error(f"Error executing rule {rule.get('rule_id')}: {str(e)}")
-                # Continue with other rules
+                return []
 
-        logger.info(f"Rules engine detected {len(findings)} potential leakage issues")
+        # Execute rules in parallel
+        findings = []
+        max_workers = min(8, len(self.rules))  # Cap at 8 workers
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(execute_rule_wrapper, rule): rule.get('rule_id') for rule in self.rules}
+
+            for future in as_completed(futures):
+                try:
+                    rule_findings = future.result(timeout=30)
+                    findings.extend(rule_findings)
+                except Exception as e:
+                    rule_id = futures[future]
+                    logger.error(f"Rule {rule_id} execution timed out or failed: {str(e)}")
+
+        logger.info(f"Rules engine detected {len(findings)} potential leakage issues (parallel)")
 
         return findings
 

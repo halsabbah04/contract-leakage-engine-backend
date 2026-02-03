@@ -188,6 +188,11 @@ class ObligationSummary(BaseModel):
     total_payment_obligations: float = Field(default=0.0, description="Total payment obligations")
     our_payment_obligations: float = Field(default=0.0, description="Our payment obligations")
     their_payment_obligations: float = Field(default=0.0, description="Counterparty payment obligations")
+    currency: str = Field(default="USD", description="Primary currency for payment obligations")
+
+    # Party names for display
+    our_organization_name: Optional[str] = Field(None, description="Name of our organization")
+    counterparty_name: Optional[str] = Field(None, description="Name of the counterparty")
 
     # Next action items
     next_due_date: Optional[date] = Field(None, description="Next upcoming due date")

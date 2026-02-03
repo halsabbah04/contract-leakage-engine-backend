@@ -165,3 +165,5 @@ tmp/
 reference docs/
 .claude/
 CLAUDE.md
+backend-logs.txt
+BUG_FIXES_AND_POLISHING.md

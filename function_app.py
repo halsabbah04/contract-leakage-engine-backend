@@ -4,6 +4,33 @@ This file registers all HTTP endpoints using the v4 model while
 keeping the existing api/ folder structure with function implementations.
 """
 
+# CRITICAL: Patch Python 3.12.9 ForwardRef compatibility BEFORE any imports
+# This fixes Pydantic v1 (used by spaCy) incompatibility with Python 3.12.9
+import sys
+if sys.version_info >= (3, 12, 9):
+    from typing import ForwardRef
+    import inspect
+    _original_evaluate = ForwardRef._evaluate
+
+    # Get the original signature to determine how to call it
+    sig = inspect.signature(_original_evaluate)
+
+    def _patched_evaluate(self, globalns, localns, type_params=None, *, recursive_guard=frozenset()):
+        # Python 3.12.9 signature: (self, globalns, localns, type_params=None, *, recursive_guard)
+        # Old Pydantic v1 calls: _evaluate(globalns, localns, set())
+        # New calls: _evaluate(globalns, localns, type_params, recursive_guard=...)
+
+        if type_params is not None and not isinstance(type_params, (type(None), frozenset, set)):
+            # type_params was passed and it's not a set (old pydantic passed set() as 3rd arg)
+            return _original_evaluate(self, globalns, localns, type_params, recursive_guard=recursive_guard)
+        else:
+            # Old Pydantic v1 style call - type_params is actually recursive_guard (a set)
+            if isinstance(type_params, (frozenset, set)):
+                recursive_guard = type_params
+            return _original_evaluate(self, globalns, localns, None, recursive_guard=recursive_guard)
+
+    ForwardRef._evaluate = _patched_evaluate
+
 # Suppress harmless google._upb module cache warning from Azure Functions worker
 import warnings
 import logging

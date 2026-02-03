@@ -13,12 +13,12 @@ azure-identity==1.15.0
 openai==1.12.0
 
 # Data validation and models
-pydantic==2.10.0
+pydantic>=2.10.3
 pydantic-settings==2.7.0
 
 # NLP and text processing
 nltk==3.8.1
-spacy==3.8.2
+spacy==3.8.3
 # spaCy model - must be installed via URL for Azure Functions remote build
 https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl
 python-docx==1.1.0

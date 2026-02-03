@@ -3,13 +3,15 @@
 Orchestrates the complete contract analysis pipeline:
 1. Extract text (OCR if needed)
 2. Extract clauses
-3. Detect leakage (rules + AI)
+3. Detect leakage (rules + AI) + Extract obligations (IN PARALLEL)
 4. Calculate impact
 """
 
+import asyncio
 import json
 import time
-from typing import Dict, List, Optional, Tuple
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Dict, List, Optional, Tuple
 
 import azure.functions as func
 
@@ -18,8 +20,22 @@ from shared.models.clause import Clause
 from shared.models.contract import ContractStatus
 from shared.utils.exceptions import DatabaseError
 from shared.utils.logging import setup_logging
+from shared.utils.async_helpers import (
+    RateLimiter,
+    retry_with_backoff,
+    run_with_timeout,
+    gather_with_progress,
+    ProgressTracker
+)
 
 logger = setup_logging(__name__)
+
+# Thread pool for running sync operations concurrently
+# Increased from 4 to 12 to handle: 3 main agents + up to 8 obligation batches + buffer
+_executor = ThreadPoolExecutor(max_workers=12)
+
+# Rate limiter for OpenAI API (60 requests per minute = 1 per second)
+_openai_rate_limiter = RateLimiter(max_requests=60, time_window=60.0)
 
 
 def extract_contract_value_from_clauses(clauses: List[Clause]) -> Tuple[Optional[float], Optional[str]]:
@@ -116,6 +132,182 @@ def calculate_contract_duration_years(contract) -> int:
     return 3  # Default to 3 years
 
 
+async def run_rules_engine_async(
+    contract_id: str,
+    clauses: List[Clause],
+    contract_metadata: Dict[str, Any],
+    risk_profile: Any,
+) -> List[Any]:
+    """Run rules engine detection asynchronously with retry and timeout."""
+    from shared.services.rules_engine import RulesEngine
+
+    async def _run():
+        loop = asyncio.get_event_loop()
+        rules_engine = RulesEngine()
+
+        # Run sync operation in thread pool
+        findings = await loop.run_in_executor(
+            _executor,
+            lambda: rules_engine.detect_leakage(contract_id, clauses, contract_metadata, risk_profile)
+        )
+        logger.info(f"Rules engine detected {len(findings)} potential issues")
+        return findings
+
+    # Run with retry and 60s timeout
+    return await retry_with_backoff(
+        lambda: run_with_timeout(_run(), timeout=60.0, task_name="Rules Engine"),
+        max_retries=2,
+        initial_delay=2.0
+    )
+
+
+async def run_ai_detection_async(
+    contract_id: str,
+    contract_metadata: Dict[str, Any],
+    clause_count: int,
+) -> List[Any]:
+    """Run AI detection asynchronously with retry, timeout, and rate limiting."""
+    if clause_count > 50:
+        logger.warning(f"Skipping AI detection: {clause_count} clauses exceeds limit of 50")
+        return []
+
+    async def _run():
+        from shared.services.ai_detection_service import AIDetectionService
+
+        # Acquire rate limiter token
+        await _openai_rate_limiter.acquire()
+
+        loop = asyncio.get_event_loop()
+        ai_service = AIDetectionService()
+
+        # Run sync operation in thread pool
+        ai_findings = await loop.run_in_executor(
+            _executor,
+            lambda: ai_service.detect_leakage(contract_id, contract_metadata)
+        )
+        logger.info(f"AI detection found {len(ai_findings)} findings")
+        return ai_findings
+
+    try:
+        # Run with retry and 120s timeout (AI detection can take longer)
+        return await retry_with_backoff(
+            lambda: run_with_timeout(_run(), timeout=120.0, task_name="AI Detection"),
+            max_retries=2,
+            initial_delay=3.0
+        )
+    except Exception as e:
+        logger.error(f"AI detection failed after retries: {str(e)}")
+        return []
+
+
+async def run_obligation_extraction_async(
+    contract_id: str,
+    contract: Any,
+    clauses: List[Clause],
+    contract_metadata: Dict[str, Any]
+) -> int:
+    """Run obligation extraction asynchronously with retry and timeout."""
+    async def _run():
+        logger.info(f"[OBLIGATION] Starting obligation extraction for contract {contract_id}")
+
+        from shared.agents.obligation_agent import ObligationExtractionAgent
+        from shared.agents.base_agent import AgentStatus
+
+        logger.info(f"[OBLIGATION] Imports successful, creating agent...")
+
+        # Extract party names from contract and clauses
+        party_names = set()
+        if contract and contract.counterparty:
+            party_names.add(contract.counterparty)
+
+        # Extract party names from clause entities
+        for clause in clauses:
+            if clause.entities and clause.entities.parties:
+                party_names.update(clause.entities.parties)
+
+        # Create enriched metadata with currency and party information
+        enriched_metadata = {
+            **contract_metadata,
+            "party_names": list(party_names),
+            "counterparty": contract.counterparty if contract else None
+        }
+
+        logger.info(f"[OBLIGATION] Metadata: currency={contract_metadata.get('contract_currency')}, parties={list(party_names)}")
+
+        obligation_agent = ObligationExtractionAgent(contract_id, contract, enriched_metadata)
+        logger.info(f"[OBLIGATION] Agent created, running extraction...")
+
+        agent_result = await obligation_agent.run()
+
+        logger.info(f"[OBLIGATION] Agent completed with status: {agent_result.status}")
+
+        if agent_result.status in [AgentStatus.COMPLETED, AgentStatus.PARTIAL] and agent_result.data:
+            obligations_count = agent_result.data.summary.total_obligations
+            logger.info(f"[OBLIGATION] Extracted {obligations_count} obligations")
+            return obligations_count
+        else:
+            logger.warning(f"[OBLIGATION] Extraction completed with issues - Status: {agent_result.status}, Error: {agent_result.error}")
+            return 0
+
+    try:
+        # Run with retry and 180s timeout (obligation extraction can be lengthy for large contracts)
+        return await retry_with_backoff(
+            lambda: run_with_timeout(_run(), timeout=180.0, task_name="Obligation Extraction"),
+            max_retries=2,
+            initial_delay=5.0
+        )
+    except Exception as e:
+        logger.error(f"[OBLIGATION] Extraction failed with exception after retries: {str(e)}", exc_info=True)
+        return 0
+
+
+async def run_parallel_analysis(
+    contract_id: str,
+    contract: Any,
+    clauses: List[Clause],
+    contract_metadata: Dict[str, Any],
+    risk_profile: Any,
+) -> Tuple[List[Any], List[Any], int]:
+    """
+    Run rules detection, AI detection, and obligation extraction in parallel with progress tracking.
+
+    Returns:
+        Tuple of (rule_findings, ai_findings, obligations_count)
+    """
+    logger.info("Starting parallel analysis (Rules + AI + Obligations)...")
+
+    # Create tasks for parallel execution
+    tasks = [
+        run_rules_engine_async(contract_id, clauses, contract_metadata, risk_profile),
+        run_ai_detection_async(contract_id, contract_metadata, len(clauses)),
+        run_obligation_extraction_async(contract_id, contract, clauses, contract_metadata)
+    ]
+
+    task_names = ["Rules Engine", "AI Detection", "Obligation Extraction"]
+
+    # Run all tasks in parallel with progress tracking
+    results = await gather_with_progress(tasks, task_names, return_exceptions=True)
+
+    # Process results
+    rule_findings = results[0] if not isinstance(results[0], Exception) else []
+    ai_findings = results[1] if not isinstance(results[1], Exception) else []
+    obligations_count = results[2] if not isinstance(results[2], Exception) else 0
+
+    logger.info(f"[PARALLEL] Processed results: rules={len(rule_findings)}, ai={len(ai_findings)}, obligations={obligations_count}")
+
+    # Log any exceptions
+    for i, result in enumerate(results):
+        if isinstance(result, Exception):
+            logger.error(f"{task_names[i]} failed with exception: {str(result)}", exc_info=result)
+
+    logger.info(
+        f"Parallel analysis complete: {len(rule_findings)} rule findings, "
+        f"{len(ai_findings)} AI findings, {obligations_count} obligations"
+    )
+
+    return rule_findings, ai_findings, obligations_count
+
+
 def main(req: func.HttpRequest) -> func.HttpResponse:
     """
     Trigger complete analysis pipeline for a contract.
@@ -201,6 +393,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             pass  # Skip if already extracted
 
         # Phase 3: Clause Extraction
+        clauses = []  # Initialize clauses list
         if contract.status in [ContractStatus.TEXT_EXTRACTED, ContractStatus.UPLOADED]:
             logger.info("Phase 3: Extracting clauses...")
 
@@ -215,15 +408,19 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                 logger.info(f"Extracted {len(clauses)} clauses")
             else:
                 raise Exception("No extracted text found for contract")
+        else:
+            # If clauses were already extracted, fetch them from database
+            logger.info("Phase 3: Fetching previously extracted clauses...")
+            from shared.db import ClauseRepository
+            clause_repo = ClauseRepository(cosmos_client.clauses_container)
+            clauses = clause_repo.get_by_contract_id(contract_id)
+            logger.info(f"Fetched {len(clauses)} previously extracted clauses")
 
-        # Phase 4: Leakage Detection (Rules Engine)
-        logger.info("Phase 4: Running rules-based leakage detection...")
+        # Phase 4-6: PARALLEL EXECUTION of Rules + AI + Obligations
+        logger.info("Phase 4-6: Running parallel analysis (Rules + AI + Obligations)...")
 
         from shared.db import FindingRepository
-        from shared.services.rules_engine import RulesEngine
         from shared.services.risk_profile_service import RiskProfileService
-
-        rules_engine = RulesEngine()
 
         # Extract contract value and currency from clauses
         extracted_value, extracted_currency = extract_contract_value_from_clauses(clauses)
@@ -260,78 +457,38 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                 f"multiplier={risk_profile.base_risk_multiplier:.2f}"
             )
 
-        # Prepare contract metadata for rules engine
+        # Prepare contract metadata for detection
         contract_metadata = {
-            "contract_value": contract_value or 0,  # Rules engine expects a number
+            "contract_value": contract_value or 0,
             "contract_currency": contract_currency,
             "duration_years": duration_years,
         }
 
-        # Run rules engine with dynamic risk profile
-        findings = rules_engine.detect_leakage(contract_id, clauses, contract_metadata, risk_profile)
-        logger.info(f"Rules engine detected {len(findings)} potential issues")
+        # Run all analysis tasks in PARALLEL
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            rule_findings, ai_findings, obligations_extracted = loop.run_until_complete(
+                run_parallel_analysis(
+                    contract_id=contract_id,
+                    contract=contract,
+                    clauses=clauses,
+                    contract_metadata=contract_metadata,
+                    risk_profile=risk_profile,
+                )
+            )
+        finally:
+            loop.close()
 
-        # Store findings in Cosmos DB
+        # Combine all findings
+        findings = list(rule_findings)
+        findings.extend(ai_findings)
+
+        # Store all findings in Cosmos DB
         finding_repo = FindingRepository(cosmos_client.findings_container)
         if findings:
             created_findings = finding_repo.bulk_create(findings)
-            logger.info(f"Stored {len(created_findings)} rule-based findings")
-
-        # Phase 5: AI-Powered Detection with GPT 5.2
-        # Skip if too many clauses to avoid timeout (max 30 clauses for AI analysis)
-        ai_findings = []
-        clause_count = len(clauses) if 'clauses' in dir() else 0
-
-        if clause_count > 50:
-            logger.warning(f"Skipping AI detection: {clause_count} clauses exceeds limit of 50")
-        else:
-            logger.info("Phase 5: Running AI-powered leakage detection with GPT 5.2...")
-
-            try:
-                from shared.services.ai_detection_service import AIDetectionService
-
-                ai_service = AIDetectionService()
-                ai_findings = ai_service.detect_leakage(contract_id, contract_metadata)
-
-                # Store AI findings
-                if ai_findings:
-                    created_ai_findings = finding_repo.bulk_create(ai_findings)
-                    logger.info(f"Stored {len(created_ai_findings)} AI-detected findings")
-                    findings.extend(ai_findings)
-
-            except Exception as e:
-                logger.error(f"AI detection failed (continuing with rule-based findings): {str(e)}")
-                # Continue even if AI detection fails - we still have rule-based findings
-
-        # Phase 6: Obligation Extraction
-        obligations_extracted = 0
-        try:
-            logger.info("Phase 6: Extracting contractual obligations...")
-
-            import asyncio
-            from shared.agents.obligation_agent import ObligationExtractionAgent
-            from shared.agents.base_agent import AgentStatus
-
-            obligation_agent = ObligationExtractionAgent(contract_id, contract)
-
-            # Run async agent in event loop
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                agent_result = loop.run_until_complete(obligation_agent.run())
-                # Check status (COMPLETED or PARTIAL are successful)
-                if agent_result.status in [AgentStatus.COMPLETED, AgentStatus.PARTIAL] and agent_result.data:
-                    # agent_result.data is an ObligationExtractionResult object
-                    obligations_extracted = agent_result.data.summary.total_obligations
-                    logger.info(f"Extracted {obligations_extracted} obligations")
-                else:
-                    logger.warning(f"Obligation extraction completed with issues: {agent_result.error}")
-            finally:
-                loop.close()
-
-        except Exception as e:
-            logger.error(f"Obligation extraction failed (continuing): {str(e)}")
-            # Continue even if obligation extraction fails
+            logger.info(f"Stored {len(created_findings)} total findings")
 
         # Calculate duration
         duration = time.time() - start_time

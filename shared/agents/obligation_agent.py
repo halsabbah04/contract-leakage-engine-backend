@@ -1,9 +1,10 @@
 """Obligation Extraction Agent for extracting contractual obligations."""
 
+import asyncio
 import json
 import uuid
 from datetime import date, datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from openai import AzureOpenAI
 
@@ -23,10 +24,14 @@ from ..models.obligation import (
 )
 from ..utils.config import get_settings
 from ..utils.logging import setup_logging
+from ..utils.async_helpers import RateLimiter, retry_with_backoff
 from .base_agent import AgentStatus, BaseAgent
 
 logger = setup_logging(__name__)
 settings = get_settings()
+
+# Global rate limiter for OpenAI API calls (60 requests per minute)
+_openai_rate_limiter = RateLimiter(max_requests=60, time_window=60.0)
 
 
 class ObligationExtractionAgent(BaseAgent):
@@ -45,16 +50,23 @@ class ObligationExtractionAgent(BaseAgent):
     agent_name: str = "obligation_extraction_agent"
     agent_version: str = "1.0"
 
-    def __init__(self, contract_id: str, contract: Optional[Contract] = None):
+    def __init__(
+        self,
+        contract_id: str,
+        contract: Optional[Contract] = None,
+        contract_metadata: Optional[Dict[str, Any]] = None
+    ):
         """
         Initialize the Obligation Extraction Agent.
 
         Args:
             contract_id: ID of the contract to analyze
             contract: Optional contract object with metadata
+            contract_metadata: Optional metadata including currency and party names
         """
         super().__init__(contract_id)
         self.contract = contract
+        self.contract_metadata = contract_metadata or {}
         self._openai_client: Optional[AzureOpenAI] = None
         self._clause_repo: Optional[ClauseRepository] = None
         self._obligation_repo: Optional[ObligationRepository] = None
@@ -90,6 +102,28 @@ class ObligationExtractionAgent(BaseAgent):
         """Return list of required input data types."""
         return ["clauses"]
 
+    # Clause types that typically contain obligations
+    OBLIGATION_CLAUSE_TYPES = {
+        "payment", "payment_terms", "pricing",
+        "delivery", "service_level", "sla",
+        "termination", "renewal", "auto_renewal",
+        "notice", "reporting",
+        "compliance", "audit", "insurance",
+        "liability", "indemnification",
+        "confidentiality", "intellectual_property",
+        "penalty", "penalties",
+        "warranty", "performance",
+    }
+
+    # Keywords that indicate obligation presence
+    OBLIGATION_KEYWORDS = [
+        "shall", "must", "will", "required", "obligated",
+        "within", "days", "deadline", "due", "notice",
+        "pay", "deliver", "report", "submit", "provide",
+        "maintain", "ensure", "comply", "certify", "renew",
+        "terminate", "notify", "respond", "complete",
+    ]
+
     async def execute(self) -> ObligationExtractionResult:
         """
         Execute obligation extraction.
@@ -100,33 +134,42 @@ class ObligationExtractionAgent(BaseAgent):
         logger.info(f"[{self.agent_name}] Starting obligation extraction for contract {self.contract_id}")
 
         # Step 1: Get all clauses for the contract
-        clauses = self.clause_repo.get_all_by_partition(self.contract_id)
+        all_clauses = self.clause_repo.get_all_by_partition(self.contract_id)
 
-        if not clauses:
+        if not all_clauses:
             self.add_warning("No clauses found for contract")
             return self._create_empty_result()
 
-        logger.info(f"[{self.agent_name}] Retrieved {len(clauses)} clauses")
+        logger.info(f"[{self.agent_name}] Retrieved {len(all_clauses)} total clauses")
 
-        # Step 2: Clear existing obligations (for re-extraction)
+        # Step 2: Pre-filter clauses to only those likely to contain obligations
+        relevant_clauses = self._filter_relevant_clauses(all_clauses)
+        logger.info(f"[{self.agent_name}] Filtered to {len(relevant_clauses)} relevant clauses (from {len(all_clauses)})")
+
+        if not relevant_clauses:
+            self.add_warning("No relevant clauses found for obligation extraction")
+            return self._create_empty_result()
+
+        # Step 3: Clear existing obligations (for re-extraction)
         existing_count = self.obligation_repo.delete_by_contract(self.contract_id)
         if existing_count > 0:
             logger.info(f"[{self.agent_name}] Cleared {existing_count} existing obligations")
 
-        # Step 3: Extract obligations using AI
-        extracted_obligations = await self._extract_obligations_with_ai(clauses)
+        # Step 4: Extract obligations using AI (with parallel batch processing)
+        extracted_obligations = await self._extract_obligations_with_ai(relevant_clauses)
 
         logger.info(f"[{self.agent_name}] Extracted {len(extracted_obligations)} obligations")
 
-        # Step 4: Store obligations in database
+        # Step 5: Store obligations in database
         if extracted_obligations:
             stored_obligations = self.obligation_repo.bulk_create(extracted_obligations)
             logger.info(f"[{self.agent_name}] Stored {len(stored_obligations)} obligations")
         else:
             stored_obligations = []
 
-        # Step 5: Generate summary
-        summary = self.obligation_repo.get_summary(self.contract_id)
+        # Step 6: Generate summary (pass counterparty for better party identification)
+        counterparty = self.contract_metadata.get("counterparty")
+        summary = self.obligation_repo.get_summary(self.contract_id, counterparty=counterparty)
 
         # Create result
         result = ObligationExtractionResult(
@@ -134,7 +177,8 @@ class ObligationExtractionAgent(BaseAgent):
             obligations=stored_obligations,
             summary=summary,
             extraction_metadata={
-                "total_clauses_analyzed": len(clauses),
+                "total_clauses": len(all_clauses),
+                "relevant_clauses_analyzed": len(relevant_clauses),
                 "extraction_timestamp": datetime.utcnow().isoformat(),
                 "agent_version": self.agent_version,
             },
@@ -144,11 +188,38 @@ class ObligationExtractionAgent(BaseAgent):
 
         return result
 
+    def _filter_relevant_clauses(self, clauses: List[Clause]) -> List[Clause]:
+        """
+        Filter clauses to only those likely to contain obligations.
+
+        Args:
+            clauses: All clauses from the contract
+
+        Returns:
+            Filtered list of relevant clauses
+        """
+        relevant = []
+
+        for clause in clauses:
+            # Check 1: Clause type is in obligation-related types
+            clause_type = (clause.clause_type or "").lower()
+            if clause_type in self.OBLIGATION_CLAUSE_TYPES:
+                relevant.append(clause)
+                continue
+
+            # Check 2: Clause text contains obligation keywords
+            text = (clause.original_text or "").lower()
+            if any(keyword in text for keyword in self.OBLIGATION_KEYWORDS):
+                relevant.append(clause)
+                continue
+
+        return relevant
+
     async def _extract_obligations_with_ai(self, clauses: List[Clause]) -> List[Obligation]:
         """
         Extract obligations from clauses using GPT.
 
-        Processes clauses in batches to avoid token limits.
+        Processes clauses in batches with parallel execution for speed.
 
         Args:
             clauses: List of clauses to analyze
@@ -156,184 +227,206 @@ class ObligationExtractionAgent(BaseAgent):
         Returns:
             List of extracted Obligation objects
         """
-        # Process in batches of 40 clauses to avoid token limits
-        BATCH_SIZE = 40
-        all_obligations: List[Obligation] = []
+        # Optimized batch size and concurrency
+        BATCH_SIZE = 50
+        MAX_CONCURRENT_BATCHES = 8  # Increased from 5 to 8 for better throughput
 
         # Split clauses into batches
         batches = [clauses[i:i + BATCH_SIZE] for i in range(0, len(clauses), BATCH_SIZE)]
-        logger.info(f"[{self.agent_name}] Processing {len(clauses)} clauses in {len(batches)} batches")
+        logger.info(f"[{self.agent_name}] Processing {len(clauses)} clauses in {len(batches)} batches (max {MAX_CONCURRENT_BATCHES} concurrent)")
 
         system_prompt = self._build_system_prompt()
+        all_obligations: List[Obligation] = []
 
-        for batch_num, batch in enumerate(batches, 1):
-            try:
-                logger.info(f"[{self.agent_name}] Processing batch {batch_num}/{len(batches)} ({len(batch)} clauses)...")
+        # Use semaphore for controlled concurrency - more efficient than sequential groups
+        semaphore = asyncio.Semaphore(MAX_CONCURRENT_BATCHES)
 
-                user_prompt = self._build_user_prompt(batch)
+        async def _process_with_semaphore(batch, batch_num):
+            """Process a batch with semaphore control."""
+            async with semaphore:
+                return await self._process_single_batch(batch, batch_num, len(batches), system_prompt)
 
-                response = self.openai_client.chat.completions.create(
+        # Create all tasks upfront for fully parallel execution
+        tasks = [
+            _process_with_semaphore(batch, batch_num)
+            for batch_num, batch in enumerate(batches, start=1)
+        ]
+
+        logger.info(f"[{self.agent_name}] Starting parallel batch processing with semaphore control...")
+
+        # Execute all batches with controlled concurrency
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Collect results
+        for batch_num, result in enumerate(results, start=1):
+            if isinstance(result, Exception):
+                logger.error(f"[{self.agent_name}] Batch {batch_num}: Failed with exception: {str(result)}")
+                self.add_warning(f"Batch {batch_num}: Error - {str(result)}")
+            elif result:
+                all_obligations.extend(result)
+
+        logger.info(f"[{self.agent_name}] Total obligations extracted from all batches: {len(all_obligations)}")
+        return all_obligations
+
+    async def _process_single_batch(
+        self, batch: List[Clause], batch_num: int, total_batches: int, system_prompt: str
+    ) -> List[Obligation]:
+        """
+        Process a single batch of clauses with rate limiting and retry logic.
+
+        Args:
+            batch: List of clauses to process
+            batch_num: Current batch number
+            total_batches: Total number of batches
+            system_prompt: The system prompt for GPT
+
+        Returns:
+            List of extracted obligations from this batch
+        """
+        async def _make_api_call():
+            # Acquire rate limiter token before making API call
+            await _openai_rate_limiter.acquire()
+
+            logger.info(f"[{self.agent_name}] Batch {batch_num}/{total_batches}: Processing {len(batch)} clauses...")
+
+            user_prompt = self._build_user_prompt(batch)
+
+            # Run the synchronous OpenAI call in a thread pool to not block
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: self.openai_client.chat.completions.create(
                     model=settings.AZURE_OPENAI_DEPLOYMENT_NAME,
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt},
                     ],
-                    temperature=0.2,
+                    temperature=0.1,  # Low temperature for more consistent extraction
                     response_format={"type": "json_object"},
                     extra_body={"max_completion_tokens": 8000},
                 )
+            )
 
-                response_text = response.choices[0].message.content
-                finish_reason = response.choices[0].finish_reason
+            response_text = response.choices[0].message.content
+            finish_reason = response.choices[0].finish_reason
 
-                if not response_text:
-                    logger.warning(f"[{self.agent_name}] Batch {batch_num}: Empty response (finish_reason: {finish_reason})")
-                    self.add_warning(f"Batch {batch_num}: Empty GPT response")
-                    continue
+            if not response_text:
+                logger.warning(f"[{self.agent_name}] Batch {batch_num}: Empty response (finish_reason: {finish_reason})")
+                self.add_warning(f"Batch {batch_num}: Empty GPT response")
+                return []
 
-                if finish_reason == "length":
-                    logger.warning(f"[{self.agent_name}] Batch {batch_num}: Response truncated (finish_reason: length)")
-                    self.add_warning(f"Batch {batch_num}: Response may be incomplete")
+            if finish_reason == "length":
+                logger.warning(f"[{self.agent_name}] Batch {batch_num}: Response truncated (finish_reason: length)")
+                self.add_warning(f"Batch {batch_num}: Response may be incomplete")
 
-                logger.info(f"[{self.agent_name}] Batch {batch_num}: Response length {len(response_text)}")
+            logger.info(f"[{self.agent_name}] Batch {batch_num}: Response length {len(response_text)}")
 
-                analysis_result = json.loads(response_text)
-                batch_obligations = self._parse_obligations(analysis_result)
+            analysis_result = json.loads(response_text)
+            batch_obligations = self._parse_obligations(analysis_result)
 
-                logger.info(f"[{self.agent_name}] Batch {batch_num}: Extracted {len(batch_obligations)} obligations")
-                all_obligations.extend(batch_obligations)
+            logger.info(f"[{self.agent_name}] Batch {batch_num}: Extracted {len(batch_obligations)} obligations")
+            return batch_obligations
 
-            except json.JSONDecodeError as e:
-                logger.error(f"[{self.agent_name}] Batch {batch_num}: Failed to parse response: {str(e)}")
-                self.add_warning(f"Batch {batch_num}: Parse error - {str(e)}")
-            except Exception as e:
-                logger.error(f"[{self.agent_name}] Batch {batch_num}: Extraction failed: {str(e)}")
-                self.add_warning(f"Batch {batch_num}: Error - {str(e)}")
+        try:
+            # Use retry logic with exponential backoff for API calls
+            return await retry_with_backoff(
+                _make_api_call,
+                max_retries=3,
+                initial_delay=2.0,
+                backoff_factor=2.0,
+                exceptions=(Exception,)
+            )
+        except Exception as e:
+            logger.error(f"[{self.agent_name}] Batch {batch_num}: Failed after all retries: {str(e)}")
+            self.add_warning(f"Batch {batch_num}: Failed after retries - {str(e)}")
+            return []
 
-        logger.info(f"[{self.agent_name}] Total obligations extracted from all batches: {len(all_obligations)}")
-        return all_obligations
+        except json.JSONDecodeError as e:
+            logger.error(f"[{self.agent_name}] Batch {batch_num}: Failed to parse response: {str(e)}")
+            self.add_warning(f"Batch {batch_num}: Parse error - {str(e)}")
+            return []
+        except Exception as e:
+            logger.error(f"[{self.agent_name}] Batch {batch_num}: Extraction failed: {str(e)}")
+            self.add_warning(f"Batch {batch_num}: Error - {str(e)}")
+            return []
 
     def _build_system_prompt(self) -> str:
         """Build the system prompt for obligation extraction."""
-        return """You are an expert contract analyst specializing in extracting contractual obligations.
+        # Get contract currency and party names from metadata
+        contract_currency = self.contract_metadata.get("contract_currency", "USD")
+        party_names = self.contract_metadata.get("party_names", [])
+        counterparty = self.contract_metadata.get("counterparty")
 
-Your task is to identify and extract ALL obligations from the contract clauses provided. An obligation is
-any commitment, requirement, or duty that one party must fulfill.
+        # Build party context
+        party_context = ""
+        if party_names:
+            party_context = f"\n\nPARTIES IN CONTRACT: {', '.join(party_names)}"
+            if counterparty:
+                party_context += f"\nCounterparty: {counterparty}"
 
-**Types of Obligations to Extract:**
+        return f"""Extract ALL contractual obligations. Output JSON only.
 
-1. **Payment Obligations** - Payment amounts, schedules, due dates, fees
-2. **Delivery Obligations** - Deliverables, deadlines, milestones
-3. **Notice Obligations** - Required notices (renewal, termination, changes)
-4. **Reporting Obligations** - Reports, certifications, documentation
-5. **Compliance Obligations** - Insurance, audits, certifications, regulatory
-6. **Performance Obligations** - SLAs, response times, availability
-7. **Renewal Obligations** - Actions required for renewal
-8. **Termination Obligations** - Actions required upon termination
-9. **Insurance Obligations** - Insurance coverage requirements
-10. **Audit Obligations** - Audit cooperation, record keeping
-11. **Confidentiality Obligations** - Data protection, non-disclosure
+Types: payment, delivery, notice, reporting, compliance, performance, renewal, termination, insurance, audit, confidentiality, other
 
-**For Each Obligation, Extract:**
-- Type of obligation
-- Title (short, descriptive)
-- Description (full details)
-- Due date (specific date if mentioned, or relative like "within 30 days of X")
-- Is it recurring? (yes/no)
-- Recurrence pattern (daily, weekly, monthly, quarterly, annually)
-- Who is responsible (which party)
-- Amount (if monetary)
-- Currency (if monetary)
-- Priority (critical, high, medium, low)
-- Source clause ID(s)
-- The original text from which this was extracted
+CONTRACT CURRENCY: {contract_currency}{party_context}
 
-**Output Format:**
-Return a JSON object with this structure:
-{
-  "obligations": [
-    {
-      "obligation_type": "payment|delivery|notice|reporting|compliance|performance|renewal|termination|insurance|audit|confidentiality|other",
-      "title": "Short descriptive title",
-      "description": "Full description of the obligation",
-      "due_date": "YYYY-MM-DD or null if not specified",
-      "effective_date": "YYYY-MM-DD or null",
-      "is_recurring": true/false,
-      "recurrence_pattern": "none|daily|weekly|monthly|quarterly|semi_annually|annually|custom",
-      "responsible_party_name": "Party name",
-      "responsible_party_role": "service_provider|client|vendor|buyer|seller|licensor|licensee|landlord|tenant",
-      "is_our_organization": false,
-      "amount": 0.0 or null,
-      "currency": "USD" or appropriate currency,
-      "priority": "critical|high|medium|low",
-      "source_clause_ids": ["clause_id_1"],
-      "extracted_text": "Original text from clause",
-      "confidence": 0.0-1.0
-    }
-  ],
-  "extraction_notes": "Any notes about the extraction process"
-}
+JSON format:
+{{"obligations":[{{
+  "obligation_type":"<type>",
+  "title":"Short title",
+  "description":"Details",
+  "due_date":"YYYY-MM-DD or null",
+  "effective_date":"YYYY-MM-DD or null",
+  "is_recurring":true/false,
+  "recurrence_pattern":"none|daily|weekly|monthly|quarterly|semi_annually|annually",
+  "responsible_party_name":"Party name",
+  "responsible_party_role":"service_provider|client|vendor|buyer|seller|other",
+  "is_our_organization":false,
+  "amount":number or null,
+  "currency":"{contract_currency}",
+  "priority":"critical|high|medium|low",
+  "source_clause_ids":["clause_id"],
+  "extracted_text":"Quote from clause",
+  "confidence":0.0-1.0
+}}]}}
 
-**Important Rules:**
-- Extract ALL obligations, even implied ones
-- Be specific about dates and amounts
-- Include the source clause IDs for traceability
-- If a party name is not explicit, use the role (e.g., "Service Provider", "Client")
-- Set is_our_organization to false by default (system can override later)
-- Confidence should reflect how clearly the obligation is stated
-"""
+Rules:
+- Extract all obligations with clause IDs
+- CRITICAL: Use currency "{contract_currency}" for ALL monetary obligations unless explicitly stated otherwise in the clause text
+- CRITICAL: Use ACTUAL party names from the PARTIES list above. Do NOT use generic terms like "service provider", "client", "vendor" when specific party names are available.
+  * Example: If parties are "Zain Bahrain B.S.C. (Zain)" and "Bahrain Economic Development Board (EDB)", use ONLY "Zain" and "EDB"
+  * ALWAYS use the abbreviation in parentheses if available (e.g., "EDB" not "Bahrain Economic Development Board")
+  * If no abbreviation exists, use the shortest form of the company name
+  * For generic references like "Either Party", "The Parties", "Both Parties" - determine which SPECIFIC party from the list the obligation applies to based on context
+  * BE CONSISTENT: Use the same exact party name throughout (e.g., always "EDB", never mix "EDB" and "Bahrain Economic Development Board")
+  * Only use "Both Parties" if obligation truly applies to both parties equally
+- CRITICAL: Extract monetary amounts EXACTLY as stated in the clause text. Do NOT infer or calculate amounts.
+- Set is_our_organization=false by default"""
 
     def _build_user_prompt(self, clauses: List[Clause]) -> str:
         """Build the user prompt with clause content."""
-        # Get contract metadata if available
-        contract_info = ""
-        if self.contract:
-            contract_info = f"""
-**Contract Information:**
-- Contract ID: {self.contract_id}
-- Title: {getattr(self.contract, 'title', 'Unknown')}
-- Parties: {getattr(self.contract, 'parties', ['Unknown'])}
-- Contract Type: {getattr(self.contract, 'contract_type', 'Unknown')}
-- Start Date: {getattr(self.contract, 'start_date', 'Unknown')}
-- End Date: {getattr(self.contract, 'end_date', 'Unknown')}
-"""
-
-        # Format clauses
+        # Format clauses compactly
         clauses_text = self._format_clauses_for_prompt(clauses)
 
-        prompt = f"""Analyze the following contract clauses and extract ALL contractual obligations.
+        prompt = f"""Extract all obligations from these clauses. Return JSON.
 
-{contract_info}
-
-**Contract Clauses:**
+CLAUSES:
 {clauses_text}
 
-**Your Task:**
-1. Read through ALL clauses carefully
-2. Identify EVERY obligation (payment, delivery, notice, reporting, compliance, performance, etc.)
-3. Extract specific details (dates, amounts, parties, recurrence)
-4. Link each obligation to its source clause(s)
-5. Return the complete list in JSON format
-
-Be thorough - missing obligations could lead to missed deadlines or compliance issues."""
+Extract obligations with: type, title, description, dates, amounts, responsible party, priority, source clause IDs."""
 
         return prompt
 
     def _format_clauses_for_prompt(self, clauses: List[Clause]) -> str:
-        """Format clauses for the AI prompt."""
+        """Format clauses compactly for the AI prompt."""
         formatted = []
 
         for clause in clauses:
-            clause_text = f"""
---- Clause ID: {clause.id} ---
-Type: {clause.clause_type}
-Section: {clause.section_number or 'N/A'}
-Text: {clause.original_text}
-Summary: {clause.normalized_summary or 'N/A'}
-"""
+            # Compact format: ID | Type | Text
+            clause_text = f"[{clause.id}] ({clause.clause_type}) {clause.original_text}"
             formatted.append(clause_text)
 
-        return "\n".join(formatted)
+        return "\n\n".join(formatted)
 
     def _parse_obligations(self, analysis_result: Dict[str, Any]) -> List[Obligation]:
         """
@@ -382,15 +475,20 @@ Summary: {clause.normalized_summary or 'N/A'}
         # Map recurrence pattern
         recurrence_pattern = self._map_recurrence_pattern(item.get("recurrence_pattern", "none"))
 
-        # Create responsible party
+        # Create responsible party with normalized name
+        raw_party_name = item.get("responsible_party_name", "Unknown Party")
+        normalized_party_name = self._normalize_party_name(raw_party_name)
         responsible_party = ResponsibleParty(
-            party_name=item.get("responsible_party_name", "Unknown Party"),
+            party_name=normalized_party_name,
             party_role=item.get("responsible_party_role", "unknown"),
             is_our_organization=item.get("is_our_organization", False),
         )
 
         # Map priority
         priority = self._map_priority(item.get("priority", "medium"))
+
+        # Get contract currency from metadata (fallback to USD only if not provided)
+        default_currency = self.contract_metadata.get("contract_currency", "USD")
 
         # Create obligation (handle None values explicitly for required string fields)
         obligation = Obligation(
@@ -406,7 +504,7 @@ Summary: {clause.normalized_summary or 'N/A'}
             recurrence_pattern=recurrence_pattern,
             responsible_party=responsible_party,
             amount=item.get("amount"),
-            currency=item.get("currency") or "USD",
+            currency=item.get("currency") or default_currency,
             priority=priority,
             clause_ids=item.get("source_clause_ids") or [],
             extracted_text=item.get("extracted_text"),
@@ -455,6 +553,62 @@ Summary: {clause.normalized_summary or 'N/A'}
             "low": ObligationPriority.LOW,
         }
         return mapping.get(priority_str.lower(), ObligationPriority.MEDIUM)
+
+    def _normalize_party_name(self, party_name: str) -> str:
+        """
+        Normalize party names to reduce fragmentation.
+
+        Args:
+            party_name: Raw party name from AI extraction
+
+        Returns:
+            Normalized party name
+        """
+        if not party_name:
+            return "Unknown Party"
+
+        name = party_name.strip()
+        name_lower = name.lower()
+
+        # Generic party references that should be kept as-is
+        generic_parties = {
+            "both parties", "either party", "each party", "the parties",
+            "all parties", "neither party", "any party"
+        }
+
+        # Check if it's a generic reference
+        for generic in generic_parties:
+            if generic in name_lower:
+                # Capitalize properly
+                return generic.title()
+
+        # Remove common suffixes/prefixes in parentheses for normalization
+        # e.g., "Zain Bahrain B.S.C. (Zain)" -> "Zain"
+        # e.g., "Bahrain Economic Development Board (EDB)" -> "EDB"
+        import re
+
+        # Extract short name from parentheses if present at the end
+        paren_match = re.search(r'\(([^)]+)\)\s*$', name)
+        if paren_match:
+            short_name = paren_match.group(1).strip()
+            # If short name looks like an abbreviation or simple name, use it
+            if len(short_name) <= 20 and not any(x in short_name.lower() for x in ['requesting', 'provisioning', 'confirmation', 'applicable']):
+                return short_name
+
+        # Handle "X and/or Y" patterns - these should generally be kept but cleaned
+        if " and/or " in name_lower or " or " in name_lower:
+            # Keep as-is but clean up
+            return name
+
+        # Handle role-based names at the end like "(requesting Party)"
+        role_pattern = re.search(r'\s*\([^)]*(?:party|requesting|receiving|disclosing|breaching|affected)[^)]*\)\s*$', name, re.IGNORECASE)
+        if role_pattern:
+            # Remove the role suffix
+            cleaned = name[:role_pattern.start()].strip()
+            if cleaned:
+                return self._normalize_party_name(cleaned)  # Recursively normalize
+
+        return name
 
     def _parse_date(self, date_str: Optional[str]) -> Optional[date]:
         """Parse date string to date object."""

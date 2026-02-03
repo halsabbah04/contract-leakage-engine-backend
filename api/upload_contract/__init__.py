@@ -81,6 +81,9 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         contract_id = f"contract_{uuid.uuid4().hex[:12]}"
 
         # Create contract record
+        from datetime import datetime
+        upload_timestamp = datetime.utcnow()
+
         contract = Contract(
             id=contract_id,
             contract_id=contract_id,
@@ -92,6 +95,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             end_date=end_date,
             contract_value_estimate=float(contract_value) if contract_value else None,
             status=ContractStatus.UPLOADED,
+            upload_date=upload_timestamp,
             partition_key=contract_id,
         )
 

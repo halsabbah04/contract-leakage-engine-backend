@@ -1,6 +1,7 @@
 """Clause extraction service - orchestrates text segmentation and NLP analysis."""
 
-from typing import Dict, List, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Dict, List, Optional, Tuple
 
 from ..db import ClauseRepository, ContractRepository, get_cosmos_client
 from ..models.clause import Clause
@@ -61,20 +62,54 @@ class ClauseExtractionService:
 
             logger.info(f"Found {len(segments)} potential clauses")
 
-            # Step 3: Analyze each segment with NLP
-            logger.info("Step 3: Analyzing clauses with NLP...")
+            # Step 3: Analyze each segment with NLP (parallel processing)
+            logger.info("Step 3: Analyzing clauses with NLP (parallel)...")
             clauses = []
 
-            for i, segment in enumerate(segments):
+            def process_segment_wrapper(args: Tuple[int, TextSegment]) -> Tuple[int, Optional[Clause]]:
+                """Wrapper to process a segment and return with index for ordering."""
+                idx, seg = args
                 try:
-                    clause = self._process_segment(segment, contract_id, i)
-                    if clause:
-                        clauses.append(clause)
+                    clause = self._process_segment(seg, contract_id, idx)
+                    return idx, clause
                 except Exception as e:
-                    logger.error(f"Failed to process segment {i}: {str(e)}")
-                    # Continue with other segments
+                    logger.error(f"Failed to process segment {idx}: {str(e)}")
+                    return idx, None
 
-            logger.info(f"Successfully processed {len(clauses)} clauses")
+            # Use thread pool for parallel NLP analysis
+            max_workers = min(8, len(segments))  # Cap at 8 workers
+            segment_args = [(i, seg) for i, seg in enumerate(segments)]
+
+            if len(segments) <= 1:
+                # Single segment - process directly
+                for i, segment in enumerate(segments):
+                    try:
+                        clause = self._process_segment(segment, contract_id, i)
+                        if clause:
+                            clauses.append(clause)
+                    except Exception as e:
+                        logger.error(f"Failed to process segment {i}: {str(e)}")
+            else:
+                # Multiple segments - process in parallel
+                results: List[Tuple[int, Optional[Clause]]] = []
+
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    futures = {executor.submit(process_segment_wrapper, args): args[0] for args in segment_args}
+
+                    for future in as_completed(futures):
+                        try:
+                            result = future.result(timeout=60)
+                            results.append(result)
+                        except Exception as e:
+                            idx = futures[future]
+                            logger.error(f"Segment {idx} execution failed: {str(e)}")
+                            results.append((idx, None))
+
+                # Sort by index and collect non-None clauses
+                results.sort(key=lambda x: x[0])
+                clauses = [clause for _, clause in results if clause is not None]
+
+            logger.info(f"Successfully processed {len(clauses)} clauses (parallel)")
 
             # Step 4: Store clauses in Cosmos DB
             logger.info("Step 4: Storing clauses in database...")
@@ -151,15 +186,27 @@ class ClauseExtractionService:
         try:
             logger.info(f"Re-extracting clauses for contract {contract_id}")
 
-            # Delete existing clauses
+            # Delete existing clauses in parallel
             cosmos_client = get_cosmos_client()
             clause_repo = ClauseRepository(cosmos_client.clauses_container)
 
             existing_clauses = clause_repo.get_by_contract_id(contract_id)
-            for clause in existing_clauses:
-                clause_repo.delete(clause.id, contract_id)
 
-            logger.info(f"Deleted {len(existing_clauses)} existing clauses")
+            if existing_clauses:
+                def delete_clause(clause: Clause):
+                    """Delete a single clause."""
+                    clause_repo.delete(clause.id, contract_id)
+                    return clause.id
+
+                with ThreadPoolExecutor(max_workers=5) as executor:
+                    futures = [executor.submit(delete_clause, c) for c in existing_clauses]
+                    for future in as_completed(futures):
+                        try:
+                            future.result(timeout=10)
+                        except Exception as e:
+                            logger.warning(f"Failed to delete clause: {str(e)}")
+
+                logger.info(f"Deleted {len(existing_clauses)} existing clauses (parallel)")
 
             # Extract new clauses
             return self.extract_clauses_from_contract(contract_id, contract_text)

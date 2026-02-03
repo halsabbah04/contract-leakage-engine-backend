@@ -1,7 +1,8 @@
 """Embedding service for generating vector embeddings using Azure OpenAI."""
 
 import time
-from typing import List
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import List, Tuple
 
 from openai import AzureOpenAI
 
@@ -82,6 +83,9 @@ class EmbeddingService:
         """
         Generate embeddings for multiple texts in batches.
 
+        Uses parallel processing with controlled concurrency to maximize throughput
+        while respecting Azure OpenAI rate limits.
+
         Args:
             texts: List of texts to embed
             batch_size: Number of texts per API call
@@ -93,38 +97,82 @@ class EmbeddingService:
             EmbeddingServiceError: If batch embedding fails
         """
         try:
-            logger.info(f"Generating embeddings for {len(texts)} texts in batches of {batch_size}")
+            logger.info(f"Generating embeddings for {len(texts)} texts in batches of {batch_size} (parallel)")
 
-            all_embeddings = []
-
+            # Prepare batches with their indices
+            batches: List[Tuple[int, List[str]]] = []
             for i in range(0, len(texts), batch_size):
                 batch = texts[i : i + batch_size]
-
-                # Filter empty texts
+                # Filter empty texts and truncate
                 batch = [t[:32000] if t else "" for t in batch]
+                batches.append((i // batch_size, batch))
 
-                try:
+            if len(batches) <= 1:
+                # Single batch - process directly
+                if batches:
+                    _, batch = batches[0]
                     response = self.client.embeddings.create(
                         input=batch,
                         model=self.embedding_model,
                         dimensions=self.embedding_dimensions,
                     )
+                    return [data.embedding for data in response.data]
+                return []
 
-                    batch_embeddings = [data.embedding for data in response.data]
-                    all_embeddings.extend(batch_embeddings)
+            def process_batch(batch_info: Tuple[int, List[str]]) -> Tuple[int, List[List[float]]]:
+                """Process a single batch and return with index for ordering."""
+                batch_idx, batch = batch_info
+                max_retries = 3
+                retry_delay = 0.1
 
-                    logger.info(f"Processed batch {i // batch_size + 1}: {len(batch_embeddings)} embeddings")
+                for attempt in range(max_retries):
+                    try:
+                        response = self.client.embeddings.create(
+                            input=batch,
+                            model=self.embedding_model,
+                            dimensions=self.embedding_dimensions,
+                        )
+                        embeddings = [data.embedding for data in response.data]
+                        logger.debug(f"Batch {batch_idx + 1} completed: {len(embeddings)} embeddings")
+                        return batch_idx, embeddings
+                    except Exception as e:
+                        if "429" in str(e) or "rate" in str(e).lower():
+                            # Rate limited - wait and retry
+                            wait_time = retry_delay * (2 ** attempt)
+                            logger.warning(f"Batch {batch_idx + 1} rate limited, retrying in {wait_time:.1f}s...")
+                            time.sleep(wait_time)
+                        else:
+                            logger.error(f"Batch {batch_idx + 1} failed: {str(e)}")
+                            return batch_idx, [[] for _ in batch]
 
-                    # Rate limiting (avoid throttling)
-                    if i + batch_size < len(texts):
-                        time.sleep(0.5)
+                # All retries exhausted
+                logger.error(f"Batch {batch_idx + 1} failed after {max_retries} retries")
+                return batch_idx, [[] for _ in batch_info[1]]
 
-                except Exception as e:
-                    logger.error(f"Batch {i // batch_size + 1} failed: {str(e)}")
-                    # Add empty embeddings for failed batch
-                    all_embeddings.extend([[] for _ in batch])
+            # Process batches in parallel with limited concurrency (3 concurrent requests)
+            max_workers = min(3, len(batches))
+            results: List[Tuple[int, List[List[float]]]] = []
 
-            logger.info(f"Generated {len(all_embeddings)} embeddings total")
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {executor.submit(process_batch, b): b[0] for b in batches}
+
+                for future in as_completed(futures):
+                    try:
+                        result = future.result(timeout=60)
+                        results.append(result)
+                    except Exception as e:
+                        batch_idx = futures[future]
+                        batch_size_actual = len(batches[batch_idx][1])
+                        logger.error(f"Batch {batch_idx + 1} execution failed: {str(e)}")
+                        results.append((batch_idx, [[] for _ in range(batch_size_actual)]))
+
+            # Sort results by batch index and flatten
+            results.sort(key=lambda x: x[0])
+            all_embeddings = []
+            for _, embeddings in results:
+                all_embeddings.extend(embeddings)
+
+            logger.info(f"Generated {len(all_embeddings)} embeddings total (parallel)")
 
             return all_embeddings
 

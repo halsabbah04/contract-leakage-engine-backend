@@ -1,6 +1,7 @@
 """AI-powered leakage detection service using Azure OpenAI GPT 5.2."""
 
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, Optional
 
 from openai import AzureOpenAI
@@ -18,6 +19,9 @@ settings = get_settings()
 
 class AIDetectionService:
     """Service for AI-powered leakage detection using GPT 5.2 and RAG."""
+
+    # Thread pool for parallel operations
+    _executor = ThreadPoolExecutor(max_workers=5)
 
     def __init__(self):
         """Initialize AI detection service with Azure OpenAI GPT 5.2."""
@@ -348,17 +352,28 @@ Provide your analysis in the specified JSON format. Include only genuine issues 
             Analysis results dictionary
         """
         try:
-            logger.info(f"Analyzing {len(clause_ids)} specific clauses")
+            logger.info(f"Analyzing {len(clause_ids)} specific clauses (parallel fetch)")
 
-            # Get clauses
+            # Get clauses in parallel
             cosmos_client = get_cosmos_client()
             clause_repo = ClauseRepository(cosmos_client.clauses_container)
 
+            def fetch_clause(clause_id: str):
+                """Fetch a single clause."""
+                return clause_repo.read(clause_id, contract_id)
+
+            # Submit all clause fetches to thread pool
+            futures = {self._executor.submit(fetch_clause, cid): cid for cid in clause_ids}
+
             clauses = []
-            for clause_id in clause_ids:
-                clause = clause_repo.read(clause_id, contract_id)
-                if clause:
-                    clauses.append(clause)
+            for future in as_completed(futures):
+                try:
+                    clause = future.result(timeout=10)
+                    if clause:
+                        clauses.append(clause)
+                except Exception as e:
+                    clause_id = futures[future]
+                    logger.warning(f"Failed to fetch clause {clause_id}: {str(e)}")
 
             if not clauses:
                 return {"analysis": "No clauses found", "findings": []}

@@ -121,7 +121,8 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
 
         # Include summary if requested
         if include_summary:
-            summary = obligation_repo.get_summary(contract_id)
+            # Pass counterparty to help identify party names
+            summary = obligation_repo.get_summary(contract_id, counterparty=contract.counterparty)
             response_data["summary"] = {
                 "total_obligations": summary.total_obligations,
                 "by_type": summary.by_type,
@@ -133,6 +134,9 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                 "total_payment_obligations": summary.total_payment_obligations,
                 "our_payment_obligations": summary.our_payment_obligations,
                 "their_payment_obligations": summary.their_payment_obligations,
+                "currency": summary.currency,
+                "our_organization_name": summary.our_organization_name,
+                "counterparty_name": summary.counterparty_name,
                 "next_due_date": summary.next_due_date.isoformat() if summary.next_due_date else None,
                 "next_obligation_title": summary.next_obligation_title,
             }

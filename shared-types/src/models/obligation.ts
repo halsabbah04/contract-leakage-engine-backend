@@ -86,6 +86,11 @@ export interface ObligationSummary {
   total_payment_obligations: number;
   our_payment_obligations: number;
   their_payment_obligations: number;
+  currency: string;
+
+  // Party names for display
+  our_organization_name?: string | null;
+  counterparty_name?: string | null;
 
   // Next action items
   next_due_date?: string | null;
