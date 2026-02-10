@@ -9,7 +9,7 @@ import azure.functions as func
 
 from shared.db import ContractRepository, get_cosmos_client
 from shared.services.storage_service import StorageService
-from shared.utils.exceptions import ContractNotFoundError, StorageError
+from shared.utils.exceptions import ContractNotFoundError, DatabaseError, StorageError
 from shared.utils.logging import setup_logging
 
 logger = setup_logging(__name__)
@@ -125,6 +125,14 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         return func.HttpResponse(
             json.dumps({"error": "Failed to generate document URL", "details": str(e)}),
             status_code=500,
+            mimetype="application/json",
+        )
+
+    except DatabaseError as e:
+        logger.error(f"Database error in get_document: {str(e)}")
+        return func.HttpResponse(
+            json.dumps({"error": "Database error occurred", "details": str(e)}),
+            status_code=503,
             mimetype="application/json",
         )
 

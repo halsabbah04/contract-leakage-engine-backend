@@ -18,7 +18,7 @@ import azure.functions as func
 from shared.db import ContractRepository, get_cosmos_client
 from shared.models.clause import Clause
 from shared.models.contract import ContractStatus
-from shared.utils.exceptions import DatabaseError
+from shared.utils.exceptions import AIServiceError, DatabaseError
 from shared.utils.logging import setup_logging
 from shared.utils.async_helpers import (
     RateLimiter,
@@ -126,8 +126,8 @@ def calculate_contract_duration_years(contract) -> int:
             end = datetime.fromisoformat(contract.end_date.replace("Z", "+00:00"))
             years = (end - start).days / 365.25
             return max(1, int(years))
-    except Exception:
-        pass
+    except (ValueError, TypeError, AttributeError) as e:
+        logger.debug(f"Could not calculate contract duration from dates: {e}")
 
     return 3  # Default to 3 years
 
@@ -167,8 +167,8 @@ async def run_ai_detection_async(
     clause_count: int,
 ) -> List[Any]:
     """Run AI detection asynchronously with retry, timeout, and rate limiting."""
-    if clause_count > 50:
-        logger.warning(f"Skipping AI detection: {clause_count} clauses exceeds limit of 50")
+    if clause_count > 200:
+        logger.warning(f"Skipping AI detection: {clause_count} clauses exceeds safety limit of 200")
         return []
 
     async def _run():
@@ -195,8 +195,11 @@ async def run_ai_detection_async(
             max_retries=2,
             initial_delay=3.0
         )
+    except (AIServiceError, asyncio.TimeoutError) as e:
+        logger.error(f"AI detection failed after retries: {type(e).__name__}: {str(e)}")
+        return []
     except Exception as e:
-        logger.error(f"AI detection failed after retries: {str(e)}")
+        logger.error(f"AI detection unexpected error: {type(e).__name__}: {str(e)}", exc_info=True)
         return []
 
 
@@ -256,8 +259,11 @@ async def run_obligation_extraction_async(
             max_retries=2,
             initial_delay=5.0
         )
+    except (AIServiceError, asyncio.TimeoutError) as e:
+        logger.error(f"[OBLIGATION] Extraction failed after retries: {type(e).__name__}: {str(e)}")
+        return 0
     except Exception as e:
-        logger.error(f"[OBLIGATION] Extraction failed with exception after retries: {str(e)}", exc_info=True)
+        logger.error(f"[OBLIGATION] Unexpected error: {type(e).__name__}: {str(e)}", exc_info=True)
         return 0
 
 

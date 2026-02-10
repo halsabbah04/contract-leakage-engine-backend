@@ -10,7 +10,7 @@ import azure.functions as func
 
 from shared.db import ContractRepository, get_cosmos_client
 from shared.services.report_service import ReportService
-from shared.utils.exceptions import ContractNotFoundError, ReportGenerationError
+from shared.utils.exceptions import ContractNotFoundError, DatabaseError, ReportGenerationError
 from shared.utils.logging import setup_logging
 
 logger = setup_logging(__name__)
@@ -116,6 +116,14 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         return func.HttpResponse(
             json.dumps({"error": "Failed to generate report", "details": str(e)}),
             status_code=500,
+            mimetype="application/json",
+        )
+
+    except DatabaseError as e:
+        logger.error(f"Database error in export_report: {str(e)}")
+        return func.HttpResponse(
+            json.dumps({"error": "Database error occurred", "details": str(e)}),
+            status_code=503,
             mimetype="application/json",
         )
 
