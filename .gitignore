@@ -167,3 +167,8 @@ reference docs/
 CLAUDE.md
 backend-logs.txt
 BUG_FIXES_AND_POLISHING.md
+
+# Brainstorming / verification artifacts (Claude Code superpowers + Playwright MCP)
+.superpowers/
+.playwright-mcp/
+header-logo-verification*.png

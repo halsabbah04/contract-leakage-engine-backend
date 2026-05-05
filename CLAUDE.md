@@ -87,7 +87,7 @@ contract-leakage-engine-backend/
 │       ├── config.py                 # Configuration management (Settings class)
 │       ├── logging.py                # Logging setup
 │       ├── exceptions.py             # Custom exceptions
-│       └── brand_constants.py        # KPMG-inspired branding for reports
+│       └── brand_constants.py        # Branding constants for reports
 │
 ├── rules/
 │   └── leakage_rules.yaml            # 15+ detection rules
@@ -395,7 +395,7 @@ class RAGServiceError(AIServiceError): ...
 
 ## Report Generation
 
-Reports use KPMG-inspired branding from `brand_constants.py`:
+Reports use the brand system defined in `brand_constants.py`:
 
 **Colors**:
 - Primary Blue: `#1a237e`
@@ -503,7 +503,7 @@ Reports use KPMG-inspired branding from `brand_constants.py`:
 4. **Partition key is `contract_id`** for all containers
 5. **GPT-5.2** is used for detection, **GPT-4.5** for clause extraction
 6. **Vector embeddings are 3072 dimensions** (text-embedding-3-large)
-7. **Reports follow KPMG Master Guide** design principles
+7. **Reports follow the project's enterprise brand guide** (see `brand_constants.py`)
 
 ---
 

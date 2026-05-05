@@ -179,7 +179,7 @@ class ReportService:
         return contract, clauses, findings
 
     def _build_cover_page(self, contract: Contract, findings: List[LeakageFinding]) -> List:
-        """Build professional cover page inspired by KPMG Master Guide."""
+        """Build professional cover page."""
         story = []
 
         # Title with brand color background

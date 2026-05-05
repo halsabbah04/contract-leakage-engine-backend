@@ -234,7 +234,7 @@ Access via Azure Portal → Function App → Application Insights
 
 ## License
 
-Proprietary - KPMG Bahrain
+Proprietary — All rights reserved.
 
 ## Support
 
